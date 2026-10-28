@@ -18,4 +18,5 @@ Thumbs.db
 *.log
 .vite/
 .turbo/
+.playwright-mcp/
 *.tsbuildinfo

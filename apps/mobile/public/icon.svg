@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DSH Mobile">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11181a" />
+      <stop offset="1" stop-color="#050708" />
+    </linearGradient>
+    <linearGradient id="lime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e2ff8e" />
+      <stop offset="1" stop-color="#a8e02f" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)" />
+  <path
+    d="M149 356V156h87c74 0 120 37 120 100s-46 100-120 100h-87Zm48-44h37c45 0 73-20 73-56s-28-56-73-56h-37v112Z"
+    fill="#f2efe6"
+  />
+  <path
+    d="M363 156h48v78h-48zM363 278h48v78h-48z"
+    fill="url(#lime)"
+    opacity="0.95"
+  />
+  <circle cx="387" cy="256" r="13" fill="#060809" />
+  <circle cx="387" cy="256" r="6" fill="url(#lime)" />
+  <path
+    d="M92 404c54 20 100 30 164 30s110-10 164-30"
+    fill="none"
+    stroke="#c9f75a"
+    stroke-linecap="round"
+    stroke-width="6"
+    opacity="0.42"
+  />
+</svg>

@@ -1,0 +1,28 @@
+{
+  "name": "DSH Mobile",
+  "short_name": "DSH",
+  "description": "在手机上远程驾驶 DeepSeek Harness。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060809",
+  "theme_color": "#060809",
+  "categories": ["developer", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
