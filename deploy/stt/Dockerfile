@@ -29,6 +29,12 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 # CPU-only torch/torchaudio wheels, pinned to a version available for
 # python:3.12 (cp312). Bump both together; torchaudio must match torch.
 ARG TORCH_VERSION=2.6.0
+# Debian apt mirrors. The default deb.debian.org failed to serve large packages
+# (libavcodec61/libflite1/libllvm19) from this host, so default to Tsinghua.
+# Alternatives: https://mirrors.aliyun.com/debian(-security),
+# https://mirrors.ustc.edu.cn/debian(-security).
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
+ARG APT_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -41,9 +47,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/root/.cache/huggingface
 
 # ffmpeg/libsndfile1 cover the audio formats browsers produce (webm/opus,
-# mp4/AAC) and the wav decoding FunASR relies on.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+# mp4/AAC) and the wav decoding FunASR relies on. Rewrite the deb822 sources
+# file (and legacy sources.list if present) before updating; both
+# deb.debian.org/debian-security and security.debian.org forms are handled.
+RUN set -eu; \
+    rewritten=0; \
+    for file in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
+        if [ -f "$file" ]; then \
+            sed -i \
+                -e "s|https\?://deb\.debian\.org/debian-security|${APT_SECURITY_MIRROR}|g" \
+                -e "s|https\?://security\.debian\.org/debian-security|${APT_SECURITY_MIRROR}|g" \
+                -e "s|https\?://security\.debian\.org|${APT_SECURITY_MIRROR}|g" \
+                -e "s|https\?://deb\.debian\.org/debian|${APT_MIRROR}|g" \
+                "$file"; \
+            rewritten=1; \
+        fi; \
+    done; \
+    if [ "$rewritten" = 0 ]; then \
+        echo "WARNING: no Debian apt sources file found; using image defaults" >&2; \
+    fi; \
+    apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \
         git \

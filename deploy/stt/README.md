@@ -59,21 +59,50 @@ docker compose build --no-cache stt   # after changing the pinned commit
 All build inputs are Compose build args with defaults in `docker-compose.yml`.
 Override them in `deploy/stt/.env` (see `.env.example`) or on the command line:
 
-| Arg               | Default (this host)                         | Domestic / fallback                                                       |
-| ----------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
-| `PYTHON_IMAGE`    | `python:3.12-slim` (already cached locally) | `docker.m.daocloud.io/library/python:3.12-slim` (or `docker.1ms.run/...`) |
-| `PIP_INDEX_URL`   | `https://pypi.tuna.tsinghua.edu.cn/simple`  | `https://pypi.org/simple`, `https://mirrors.aliyun.com/pypi/simple/`      |
-| `TORCH_INDEX_URL` | `https://download.pytorch.org/whl/cpu`      | `https://mirror.sjtu.edu.cn/pytorch-wheels/cpu`                           |
-| `TORCH_VERSION`   | `2.6.0`                                     | keep torch/torchaudio identical                                           |
-| `FUNASR_REPO`     | `https://github.com/modelscope/FunASR.git`  | `https://gitee.com/mirrors/FunASR.git`                                    |
-| `FUNASR_COMMIT`   | `d91d961e...`                               | keep the reviewed commit                                                  |
+| Arg                   | Default (this host)                                    | Domestic / fallback                                                       |
+| --------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `PYTHON_IMAGE`        | `python:3.12-slim` (already cached locally)            | `docker.m.daocloud.io/library/python:3.12-slim` (or `docker.1ms.run/...`) |
+| `PIP_INDEX_URL`       | `https://pypi.tuna.tsinghua.edu.cn/simple`             | `https://pypi.org/simple`, `https://mirrors.aliyun.com/pypi/simple/`      |
+| `APT_MIRROR`          | `https://mirrors.tuna.tsinghua.edu.cn/debian`          | `https://mirrors.aliyun.com/debian`, `https://mirrors.ustc.edu.cn/debian` |
+| `APT_SECURITY_MIRROR` | `https://mirrors.tuna.tsinghua.edu.cn/debian-security` | `https://mirrors.aliyun.com/debian-security` (or USTC)                    |
+| `TORCH_INDEX_URL`     | `https://download.pytorch.org/whl/cpu`                 | `https://mirror.sjtu.edu.cn/pytorch-wheels/cpu`                           |
+| `TORCH_VERSION`       | `2.6.0`                                                | keep torch/torchaudio identical                                           |
+| `FUNASR_REPO`         | `https://github.com/modelscope/FunASR.git`             | `https://gitee.com/mirrors/FunASR.git`                                    |
+| `FUNASR_COMMIT`       | `d91d961e...`                                          | keep the reviewed commit                                                  |
 
 The defaults were chosen after short reachability probes, not a build: the local
-`python:3.12-slim` image is present (linux/amd64), the Tsinghua PyPI index
-returned 200, the official and SJTU torch indexes returned 200 and both list the
-`2.6.0` cp312 CPU wheels, and `git ls-remote` succeeded for GitHub and Gitee
-(the pinned commit exists on the Gitee mirror). Docker Hub mirror manifests timed
-out from this host, which is why the base image defaults to the local tag.
+`python:3.12-slim` image is present (linux/amd64, Debian 13 trixie), the Tsinghua
+PyPI index returned 200, the Tsinghua Debian and Debian-security `dists/.../Release`
+probes returned 200 (~190 ms), the official and SJTU torch indexes returned 200
+and both list the `2.6.0` cp312 CPU wheels, and `git ls-remote` succeeded for
+GitHub and Gitee (the pinned commit exists on the Gitee mirror). Docker Hub
+mirror manifests timed out from this host, which is why the base image defaults
+to the local tag.
+
+### Debian apt mirror
+
+The 2026-10-28 build failed in layer `[2/6]` after ~40 minutes with:
+
+```text
+E: Failed to fetch http://deb.debian.org/debian-security/.../libavcodec61_..._amd64.deb  Connection failed [IP: 199.232.162.132 80]
+E: Failed to fetch http://deb.debian.org/debian/pool/main/f/flite/libflite1_..._amd64.deb  Connection failed
+E: Failed to fetch http://deb.debian.org/debian/pool/main/l/llvm-toolchain-19/libllvm19_..._amd64.deb  Connection failed
+E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?
+```
+
+The Dockerfile now rewrites both `/etc/apt/sources.list.d/debian.sources`
+(deb822) and the legacy `/etc/apt/sources.list` when present, replacing
+`deb.debian.org` and `security.debian.org` prefixes with `APT_MIRROR` /
+`APT_SECURITY_MIRROR`, then runs `apt-get -o Acquire::Retries=5 update/install`.
+If neither file exists it prints a warning instead of failing. To use a
+different mirror:
+
+```bash
+cd deploy/stt
+APT_MIRROR=https://mirrors.aliyun.com/debian \
+APT_SECURITY_MIRROR=https://mirrors.aliyun.com/debian-security \
+docker compose up -d --build
+```
 
 Example override for a machine without the local base image:
 
@@ -84,7 +113,7 @@ PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
 docker compose build
 ```
 
-`PYTHON_IMAGE` is the only image pulled from a registry; the PyPI/torch/repo
+`PYTHON_IMAGE` is the only image pulled from a registry; the PyPI/torch/repo/apt
 URLs only affect downloads inside the build. The base is 3.12 because that is
 what is cached locally; the upstream example originally used 3.10. FunASR
 declares `python>=3.7` and torch 2.6.0 cp312 wheels exist, but the 3.12
