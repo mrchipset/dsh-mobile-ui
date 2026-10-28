@@ -34,10 +34,47 @@ describe('health endpoint', () => {
       db: 'ok',
       acpEnabled: false,
       agent: 'disabled',
+      stt: {
+        enabled: false,
+        provider: 'funasr',
+        model: 'SenseVoiceSmall',
+      },
     })
 
     const apiResponse = await app.inject({ method: 'GET', url: '/api/health' })
     expect(apiResponse.statusCode).toBe(200)
+
+    await app.close()
+    lease.dispose()
+  })
+
+  it('reports configured STT state without probing the service', async () => {
+    const config = loadConfig({
+      BRIDGE_SECRET: 'correct-horse-battery',
+      ACP_ENABLED: 'false',
+      STT_ENABLED: 'true',
+      STT_PROVIDER: 'funasr',
+      STT_MODEL: 'SenseVoiceSmall-int8',
+    } as NodeJS.ProcessEnv)
+    opened = openDatabase({ ...config, dbPath: ':memory:' })
+    const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
+    const app = buildApp({
+      config,
+      repo: opened.repo,
+      lease,
+      logger: createLogger('silent'),
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/health' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      ok: true,
+      stt: {
+        enabled: true,
+        provider: 'funasr',
+        model: 'SenseVoiceSmall-int8',
+      },
+    })
 
     await app.close()
     lease.dispose()

@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 const portSchema = z.coerce.number().int().min(1).max(65535)
 const nonNegativeIntSchema = z.coerce.number().int().nonnegative()
+const positiveIntSchema = z.coerce.number().int().positive()
 const booleanishSchema = z
   .enum(['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'])
   .transform((value) => value === 'true' || value === '1' || value === 'yes' || value === 'on')
@@ -24,6 +25,16 @@ const envSchema = z.object({
   PERMISSION_TTL_MS: nonNegativeIntSchema.default(180000),
   LOG_LEVEL: z.string().default('info'),
   ACP_ENABLED: booleanishSchema.default(true),
+  STT_ENABLED: booleanishSchema.default(false),
+  STT_PROVIDER: z.string().min(1).default('funasr'),
+  STT_BASE_URL: z.string().min(1).default('http://127.0.0.1:8000/v1'),
+  STT_MODEL: z.string().min(1).default('SenseVoiceSmall'),
+  STT_LANGUAGE: z.string().min(1).default('zh'),
+  STT_TIMEOUT_MS: positiveIntSchema.default(60000),
+  STT_MAX_BYTES: positiveIntSchema.default(8388608),
+  STT_MAX_DURATION_MS: positiveIntSchema.default(60000),
+  STT_CONCURRENCY: positiveIntSchema.default(1),
+  STT_API_KEY_ENV: z.string().min(1).optional(),
 })
 
 export interface Config {
@@ -42,6 +53,16 @@ export interface Config {
   permissionTtlMs: number
   logLevel: string
   acpEnabled: boolean
+  sttEnabled: boolean
+  sttProvider: string
+  sttBaseUrl: string
+  sttModel: string
+  sttLanguage: string
+  sttTimeoutMs: number
+  sttMaxBytes: number
+  sttMaxDurationMs: number
+  sttConcurrency: number
+  sttApiKeyEnv?: string
 }
 
 /** Walk up until the workspace root so pnpm-filter cwd changes do not move data/. */
@@ -97,5 +118,15 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     permissionTtlMs: parsed.PERMISSION_TTL_MS,
     logLevel: parsed.LOG_LEVEL,
     acpEnabled: parsed.ACP_ENABLED,
+    sttEnabled: parsed.STT_ENABLED,
+    sttProvider: parsed.STT_PROVIDER,
+    sttBaseUrl: parsed.STT_BASE_URL,
+    sttModel: parsed.STT_MODEL,
+    sttLanguage: parsed.STT_LANGUAGE,
+    sttTimeoutMs: parsed.STT_TIMEOUT_MS,
+    sttMaxBytes: parsed.STT_MAX_BYTES,
+    sttMaxDurationMs: parsed.STT_MAX_DURATION_MS,
+    sttConcurrency: parsed.STT_CONCURRENCY,
+    ...(parsed.STT_API_KEY_ENV === undefined ? {} : { sttApiKeyEnv: parsed.STT_API_KEY_ENV }),
   }
 }

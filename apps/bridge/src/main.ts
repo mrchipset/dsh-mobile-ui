@@ -5,6 +5,7 @@ import { openDatabase } from './db/index.js'
 import { loadEnvironment } from './env.js'
 import { LeaseManager } from './lease/manager.js'
 import { createLogger, errorSummary } from './logger.js'
+import { OpenAICompatibleStt } from './stt/index.js'
 
 loadEnvironment()
 
@@ -42,6 +43,18 @@ async function main(): Promise<void> {
   const database = openDatabase(config)
   const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
 
+  const sttApiKey = config.sttApiKeyEnv === undefined ? undefined : process.env[config.sttApiKeyEnv]
+  const stt = config.sttEnabled
+    ? new OpenAICompatibleStt({
+        baseUrl: config.sttBaseUrl,
+        provider: config.sttProvider,
+        model: config.sttModel,
+        defaultLanguage: config.sttLanguage,
+        timeoutMs: config.sttTimeoutMs,
+        ...(sttApiKey === undefined || sttApiKey.length === 0 ? {} : { apiKey: sttApiKey }),
+      })
+    : undefined
+
   let supervisor: AcpSupervisor | undefined
   if (config.acpEnabled) {
     supervisor = new AcpSupervisor(
@@ -70,6 +83,7 @@ async function main(): Promise<void> {
     repo: database.repo,
     lease,
     ...(supervisor === undefined ? {} : { supervisor }),
+    ...(stt === undefined ? {} : { stt }),
     logger: log,
   })
 

@@ -21,6 +21,42 @@ describe('loadConfig', () => {
     expect(config.permissionTtlMs).toBe(180000)
     expect(config.logLevel).toBe('info')
     expect(config.acpEnabled).toBe(true)
+    expect(config.sttEnabled).toBe(false)
+    expect(config.sttProvider).toBe('funasr')
+    expect(config.sttBaseUrl).toBe('http://127.0.0.1:8000/v1')
+    expect(config.sttModel).toBe('SenseVoiceSmall')
+    expect(config.sttLanguage).toBe('zh')
+    expect(config.sttTimeoutMs).toBe(60000)
+    expect(config.sttMaxBytes).toBe(8388608)
+    expect(config.sttMaxDurationMs).toBe(60000)
+    expect(config.sttConcurrency).toBe(1)
+    expect(config.sttApiKeyEnv).toBeUndefined()
+  })
+
+  it('parses STT overrides', () => {
+    const config = loadConfig({
+      BRIDGE_SECRET: secret,
+      STT_ENABLED: 'true',
+      STT_PROVIDER: 'funasr',
+      STT_BASE_URL: 'http://192.168.1.50:8000/v1',
+      STT_MODEL: 'SenseVoiceSmall-int8',
+      STT_LANGUAGE: 'auto',
+      STT_TIMEOUT_MS: '120000',
+      STT_MAX_BYTES: '1048576',
+      STT_MAX_DURATION_MS: '30000',
+      STT_CONCURRENCY: '2',
+      STT_API_KEY_ENV: 'STT_API_KEY',
+    } as NodeJS.ProcessEnv)
+
+    expect(config.sttEnabled).toBe(true)
+    expect(config.sttBaseUrl).toBe('http://192.168.1.50:8000/v1')
+    expect(config.sttModel).toBe('SenseVoiceSmall-int8')
+    expect(config.sttLanguage).toBe('auto')
+    expect(config.sttTimeoutMs).toBe(120000)
+    expect(config.sttMaxBytes).toBe(1048576)
+    expect(config.sttMaxDurationMs).toBe(30000)
+    expect(config.sttConcurrency).toBe(2)
+    expect(config.sttApiKeyEnv).toBe('STT_API_KEY')
   })
 
   it('uses DSH_PROFILE only when DSH_ARGS is absent', () => {
