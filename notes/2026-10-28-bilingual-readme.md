@@ -20,6 +20,8 @@ Use option 2. `README.md` is the English landing page and Gitee English fallback
 
 Add the standard MIT license with copyright `2026 Zouyu`, and declare `"license": "MIT"` in the root `package.json`.
 
+Positioning: the project is explicitly framed as a **demo mobile UI**, not a production client. The README introduction, Chinese introduction, and root package description all state this.
+
 ## Tradeoffs / risks
 
 - GitHub cannot auto-switch README language; the switcher is the only path to Chinese there.

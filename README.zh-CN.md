@@ -2,9 +2,9 @@
 
 [English](README.md) | **简体中文**
 
-面向移动端的 DeepSeek Harness Web 客户端，以及一个本地 Node Bridge。浏览器通过 WebSocket 连接 Bridge，Bridge 以 stdio JSON-RPC（ACP）驱动本机 `dsh --profile acp`。
+一个用于演示的 DeepSeek Harness 移动端 UI。它由移动优先的 React 客户端和本地 Node Bridge 组成，通过 Agent Client Protocol（ACP）驱动本机 `dsh --profile acp`。
 
-> 状态：早期实现。核心链路已经可用：ACP supervisor、SQLite 持久化、WebSocket 协议、移动端聊天、工具/计划渲染、审批、写权租约和 Light/Dark 主题。MCP 探测和生产化加固仍在进行。
+> 这是一个 demo，不是生产级客户端。主要用于探索和验证移动端工作流：会话、流式更新、工具/计划渲染、审批、写权租约和 Light/Dark 主题。仍可能存在粗糙之处、内存租约和未完成的 MCP 集成。
 
 ## 功能
 

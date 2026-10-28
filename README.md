@@ -2,9 +2,9 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A mobile-first web client for DeepSeek Harness, plus a local Node bridge that drives `dsh --profile acp` over the Agent Client Protocol (ACP).
+A **demo mobile UI** for DeepSeek Harness. It pairs a mobile-first React client with a local Node bridge that drives `dsh --profile acp` over the Agent Client Protocol (ACP).
 
-> Status: early implementation. The core path works end to end: ACP supervision, SQLite persistence, WebSocket protocol, mobile chat, tool/plan rendering, approvals, write lease, and Light/Dark themes. MCP probing and production hardening are still in progress.
+> This is a demo, not a production client. It exists to explore and validate the mobile workflow: sessions, streaming updates, tool/plan rendering, approvals, write lease, and Light/Dark themes. Expect rough edges, in-memory leases, and incomplete MCP integration.
 
 ## Features
 
