@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import { SttError, transcribeAudio, useSttHealth } from '../../lib/stt'
+import { insertTranscript } from '../../lib/transcript'
 import { cn } from '../../lib/utils'
 import { firstIssue, promptSchema } from '../../lib/validation'
 import { useVoiceRecorder, type VoiceClip } from '../../lib/voice-recorder'
@@ -65,6 +66,7 @@ export function Composer({
   const connected = mode === 'demo' || status === 'ready'
   const running = session.running
   const environmentIssue = voiceEnvironmentIssue(mode)
+  // `active` drops during reconnect, so returning to ready re-probes STT health.
   const stt = useSttHealth({ active: mode === 'live' && status === 'ready', demo: mode === 'demo' })
 
   function resizeTextarea() {
@@ -74,41 +76,36 @@ export function Composer({
     element.style.height = `${String(Math.min(element.scrollHeight, 138))}px`
   }
 
-  function insertTranscript(text: string) {
-    const cleaned = text.trim()
-    if (cleaned.length === 0) return
-
+  function applyTranscript(text: string) {
     const textarea = textareaRef.current
-    const current = draftRef.current
-    const start = textarea?.selectionStart ?? current.length
-    const end = textarea?.selectionEnd ?? current.length
-    const before = current.slice(0, Math.max(0, Math.min(start, current.length)))
-    const after = current.slice(Math.max(0, Math.max(start, end)))
-    const leadingSpace = before.length > 0 && !/\s$/.test(before) ? ' ' : ''
-    const trailingSpace = after.length > 0 && !/^\s/.test(after) ? ' ' : ''
-    const next = `${before}${leadingSpace}${cleaned}${trailingSpace}${after}`
+    const insertion = insertTranscript(
+      draftRef.current,
+      text,
+      textarea?.selectionStart,
+      textarea?.selectionEnd,
+    )
+    if (insertion.value === draftRef.current && text.trim().length === 0) return
 
-    draftRef.current = next
-    setDraft(next)
+    draftRef.current = insertion.value
+    setDraft(insertion.value)
     setError(null)
 
     requestAnimationFrame(() => {
       const target = textareaRef.current
       if (target === null) return
       target.focus()
-      const cursor = before.length + leadingSpace.length + cleaned.length
-      target.setSelectionRange(cursor, cursor)
+      target.setSelectionRange(insertion.caret, insertion.caret)
       resizeTextarea()
     })
   }
 
-  async function transcribeClip(clip: VoiceClip): Promise<string> {
+  async function transcribeClip(clip: VoiceClip, signal: AbortSignal): Promise<string> {
     try {
       const result = await transcribeAudio({
         blob: clip.blob,
         durationMs: clip.durationMs,
         token: authToken,
-        language: 'zh',
+        signal,
       })
       return result.text
     } catch (transcriptionError) {
@@ -122,7 +119,7 @@ export function Composer({
   const voice = useVoiceRecorder({
     demo: mode === 'demo',
     transcribe: transcribeClip,
-    onTranscript: insertTranscript,
+    onTranscript: applyTranscript,
   })
 
   const sttDisabled = mode !== 'demo' && stt.state.status === 'disabled'
@@ -146,15 +143,16 @@ export function Composer({
               : null
   const micDisabled = micDisabledReason !== null
 
-  const micLabel = micDisabled
-    ? `语音输入不可用（${micDisabledReason}）`
-    : voice.state === 'recording'
-      ? '停止录音并转写'
-      : voice.state === 'requesting'
-        ? '取消录音请求'
-        : voice.state === 'transcribing'
-          ? '正在转写语音'
-          : '按住说话，或点击开始录音'
+  const micLabel =
+    voice.state === 'transcribing'
+      ? '正在转写语音'
+      : voice.state === 'recording'
+        ? '停止录音并转写'
+        : voice.state === 'requesting'
+          ? '取消录音请求'
+          : micDisabled
+            ? `语音输入不可用（${micDisabledReason}）`
+            : '按住说话，或点击开始录音'
 
   function toggleVoice() {
     if (micDisabled) return
@@ -175,6 +173,7 @@ export function Composer({
 
   function handleMicPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     if (micDisabled || event.button !== 0) return
+    if (event.pointerType === 'mouse') return
     pointerHandledRef.current = true
     holdPointerRef.current = event.pointerId
     try {
@@ -380,6 +379,7 @@ export function Composer({
               setDraft(event.target.value)
               draftRef.current = event.target.value
               if (error !== null) setError(null)
+              if (voice.error !== null) voice.reset()
               resizeTextarea()
             }}
             onKeyDown={handleKeyDown}
@@ -396,7 +396,8 @@ export function Composer({
             onPointerUp={releaseMicPointer}
             onPointerCancel={releaseMicPointer}
             onContextMenu={(event) => event.preventDefault()}
-            disabled={micDisabled}
+            disabled={micDisabled && !voiceBusy}
+            aria-disabled={micDisabled && !voiceBusy}
             aria-label={micLabel}
             aria-pressed={voice.state === 'recording'}
             aria-busy={voice.state === 'requesting' || voice.state === 'transcribing'}

@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  decideVoiceStop,
+  isVoiceCancellable,
+  stateAfterVoiceCancel,
+  VOICE_MIN_DURATION_MS,
+  type VoiceState,
+} from './voice-state'
 
-export type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
+export type { VoiceState } from './voice-state'
+export { VOICE_MIN_DURATION_MS } from './voice-state'
+
 export type VoiceSource = 'microphone' | 'demo'
 
 export interface VoiceClip {
@@ -12,7 +21,7 @@ export interface VoiceClip {
 
 export interface UseVoiceRecorderOptions {
   demo: boolean
-  transcribe: (clip: VoiceClip) => Promise<string>
+  transcribe: (clip: VoiceClip, signal: AbortSignal) => Promise<string>
   onTranscript: (text: string) => void
   demoTranscript?: string
   maxDurationMs?: number
@@ -31,7 +40,6 @@ export interface VoiceRecorderApi {
 }
 
 export const VOICE_MAX_DURATION_MS = 60_000
-export const VOICE_MIN_DURATION_MS = 300
 export const DEMO_VOICE_TRANSCRIPT = '把支付回调改成异步处理，并补一个失败重试的测试。'
 
 const MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4']
@@ -86,6 +94,8 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
   const mimeTypeRef = useRef('')
   const audioContextRef = useRef<AudioContext | null>(null)
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const trackCleanupRef = useRef<(() => void) | null>(null)
+  const transcriptionAbortRef = useRef<AbortController | null>(null)
 
   const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -99,10 +109,10 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
   onTranscriptRef.current = options.onTranscript
   demoTranscriptRef.current = options.demoTranscript ?? DEMO_VOICE_TRANSCRIPT
 
-  function setVoiceState(next: VoiceState): void {
+  const setVoiceState = useCallback((next: VoiceState): void => {
     stateRef.current = next
     if (mountedRef.current) setState(next)
-  }
+  }, [])
 
   function clearCaptureTimers(): void {
     if (levelTimerRef.current !== null) {
@@ -128,9 +138,33 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
   }
 
   function stopStream(stream: MediaStream | null = streamRef.current): void {
+    const cleanup = trackCleanupRef.current
+    trackCleanupRef.current = null
+    cleanup?.()
     if (stream === null) return
-    for (const track of stream.getTracks()) track.stop()
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop()
+      } catch {
+        // Track may already be ended.
+      }
+    }
     if (streamRef.current === stream) streamRef.current = null
+  }
+
+  function attachTrackGuards(stream: MediaStream): void {
+    const tracks = stream.getAudioTracks()
+    if (tracks.length === 0) return
+    const handleEnded = (): void => {
+      if (stateRef.current !== 'recording' && stateRef.current !== 'requesting') return
+      attemptRef.current += 1
+      cancelledRef.current = true
+      showVoiceError('麦克风连接已中断')
+    }
+    for (const track of tracks) track.addEventListener('ended', handleEnded)
+    trackCleanupRef.current = () => {
+      for (const track of tracks) track.removeEventListener('ended', handleEnded)
+    }
   }
 
   function closeAudioGraph(): void {
@@ -251,11 +285,13 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
 
   async function transcribeClip(clip: VoiceClip): Promise<void> {
     const attempt = attemptRef.current
+    const controller = new AbortController()
+    transcriptionAbortRef.current = controller
     setVoiceState('transcribing')
     setError(null)
     setLevel(0)
     try {
-      const text = (await transcribeRef.current(clip)).trim()
+      const text = (await transcribeRef.current(clip, controller.signal)).trim()
       if (attempt !== attemptRef.current || !mountedRef.current) return
       if (text.length === 0) throw new Error('没有识别到文字，请再试一次')
       onTranscriptRef.current(text)
@@ -273,21 +309,30 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
       setError(message)
       setElapsedMs(0)
       setLevel(0)
+    } finally {
+      if (transcriptionAbortRef.current === controller) transcriptionAbortRef.current = null
     }
   }
 
   function finish(): void {
     if (stateRef.current !== 'recording' || finishingRef.current) return
-    finishingRef.current = true
 
     const startedAt = startedAtRef.current
     const durationMs =
       startedAt === null ? 0 : Math.max(0, Math.min(maxDurationMs, performance.now() - startedAt))
+    const decision = decideVoiceStop({
+      state: stateRef.current,
+      durationMs,
+      cancelled: cancelledRef.current,
+      minDurationMs,
+    })
+    if (decision.kind === 'ignore') return
 
+    finishingRef.current = true
     clearCaptureTimers()
     setElapsedMs(durationMs)
 
-    if (durationMs < minDurationMs) {
+    if (decision.kind === 'discard') {
       cancelledRef.current = true
       stopRecorderSilently()
       stopStream()
@@ -295,7 +340,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
       startedAtRef.current = null
       finishingRef.current = false
       setVoiceState('error')
-      setError('录音太短，已丢弃')
+      setError(decision.error)
       setElapsedMs(0)
       setLevel(0)
       return
@@ -423,6 +468,12 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
       streamRef.current = stream
       mimeTypeRef.current = mimeType
       chunksRef.current = []
+      attachTrackGuards(stream)
+
+      if (stream.getAudioTracks().some((track) => track.readyState === 'ended')) {
+        showVoiceError('麦克风连接已中断')
+        return
+      }
 
       let recorder: MediaRecorder
       try {
@@ -439,6 +490,11 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
       }
       recorder.onerror = () => {
         showVoiceError('录音失败，请重试')
+      }
+
+      if (!mountedRef.current || attempt !== attemptRef.current) {
+        stopStream(stream)
+        return
       }
 
       recorder.start(250)
@@ -461,13 +517,16 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
   }
 
   function cancel(): void {
-    if (stateRef.current !== 'recording' && stateRef.current !== 'requesting') return
+    const current = stateRef.current
+    if (!isVoiceCancellable(current)) return
     cancelledRef.current = true
     attemptRef.current += 1
     finishingRef.current = false
+    transcriptionAbortRef.current?.abort()
+    transcriptionAbortRef.current = null
     releaseCaptureResources()
     if (!mountedRef.current) return
-    setVoiceState('idle')
+    setVoiceState(stateAfterVoiceCancel(current))
     setElapsedMs(0)
     setLevel(0)
     setError(null)
@@ -486,6 +545,8 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
     attemptRef.current += 1
     cancelledRef.current = true
     finishingRef.current = false
+    transcriptionAbortRef.current?.abort()
+    transcriptionAbortRef.current = null
     releaseCaptureResources()
   }
 
@@ -495,13 +556,24 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
   useEffect(() => {
     mountedRef.current = true
     const handlePageHide = (): void => teardownRef.current()
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState !== 'hidden') return
+      teardownRef.current()
+      if (!mountedRef.current) return
+      setVoiceState('idle')
+      setElapsedMs(0)
+      setLevel(0)
+      setError(null)
+    }
     window.addEventListener('pagehide', handlePageHide)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       mountedRef.current = false
       window.removeEventListener('pagehide', handlePageHide)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       teardownRef.current()
     }
-  }, [])
+  }, [setVoiceState])
 
   return { state, elapsedMs, level, error, start, stop, cancel, reset }
 }

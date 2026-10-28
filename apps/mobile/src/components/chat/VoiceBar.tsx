@@ -132,11 +132,11 @@ export function VoiceBar({ state, elapsedMs, level, demo, onCancel, onStop }: Vo
             <Square aria-hidden className="size-3 fill-current" />
           </button>
         </div>
-      ) : transcribing ? null : (
+      ) : (
         <button
           type="button"
           onClick={onCancel}
-          aria-label="取消录音"
+          aria-label={transcribing ? '取消转写' : '取消录音'}
           className="tap flex size-11 shrink-0 items-center justify-center rounded-full border border-line bg-ink-900 text-mute transition hover:border-coral/30 hover:text-coral"
         >
           <X aria-hidden className="size-4" />

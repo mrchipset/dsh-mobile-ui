@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+/** Bridge STT_TIMEOUT_MS default is 60s; keep a margin for proxy/serialization. */
+export const TRANSCRIBE_TIMEOUT_MS = 85_000
+
 export type SttErrorCode =
   | 'unauthorized'
   | 'audio_empty'
@@ -34,7 +37,11 @@ export class SttError extends Error {
   readonly maxBytes: number | undefined
 
   constructor(code: SttErrorCode, maxBytes?: number) {
-    super(ERROR_COPY[code])
+    const limit =
+      code === 'audio_too_large' && maxBytes !== undefined && maxBytes > 0
+        ? `（上限 ${String(Math.max(1, Math.round(maxBytes / (1024 * 1024))))} MB）`
+        : ''
+    super(`${ERROR_COPY[code]}${limit}`)
     this.name = 'SttError'
     this.code = code
     this.maxBytes = maxBytes
@@ -89,8 +96,13 @@ function statusToCode(status: number): SttErrorCode {
     case 502:
       return 'stt_upstream_error'
     default:
-      return 'invalid_response'
+      return status >= 500 ? 'stt_upstream_error' : 'invalid_response'
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('name' in error)) return false
+  return (error as { name?: unknown }).name === 'AbortError'
 }
 
 function isKnownErrorCode(value: string): value is SttErrorCode {
@@ -126,6 +138,15 @@ export async function transcribeAudio(input: TranscribeInput): Promise<SttResult
     headers.set('X-Audio-Language', input.language.trim())
   }
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TRANSCRIBE_TIMEOUT_MS)
+  const external = input.signal
+  const forwardAbort = () => controller.abort()
+  if (external !== undefined) {
+    if (external.aborted) controller.abort()
+    else external.addEventListener('abort', forwardAbort, { once: true })
+  }
+
   let response: Response
   try {
     response = await fetch('/api/transcribe', {
@@ -133,10 +154,14 @@ export async function transcribeAudio(input: TranscribeInput): Promise<SttResult
       headers,
       body: input.blob,
       credentials: 'same-origin',
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      signal: controller.signal,
     })
-  } catch {
+  } catch (error) {
+    if (controller.signal.aborted || isAbortError(error)) throw new SttError('stt_timeout')
     throw new SttError('network_error')
+  } finally {
+    clearTimeout(timeout)
+    external?.removeEventListener('abort', forwardAbort)
   }
 
   const body = await parseJsonBody(response)
