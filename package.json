@@ -1,0 +1,36 @@
+{
+  "name": "dsh-mobile-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n bridge,mobile -c blue,magenta \"pnpm dev:bridge\" \"pnpm dev:mobile\"",
+    "dev:bridge": "pnpm --filter @dsh-mobile/bridge dev",
+    "dev:mobile": "pnpm --filter @dsh-mobile/mobile dev",
+    "build": "pnpm -r build",
+    "typecheck": "tsc -p packages/protocol/tsconfig.json --noEmit && tsc -p apps/bridge/tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "smoke:acp": "pnpm --filter @dsh-mobile/bridge smoke:acp"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
+    "@types/node": "^22.20.1",
+    "concurrently": "^10.0.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}
