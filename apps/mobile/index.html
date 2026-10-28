@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -7,7 +7,39 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"
     />
     <meta name="theme-color" content="#060809" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
+    <style>
+      html {
+        background: #060809;
+      }
+      html[data-theme="light"] {
+        background: #efe9dc;
+      }
+    </style>
+    <script>
+      (() => {
+        try {
+          const key = 'dsh-mobile.theme'
+          const stored = localStorage.getItem(key)
+          const theme =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+          document.documentElement.dataset.theme = theme
+          document.documentElement.style.colorScheme = theme
+          const themeColor = document.querySelector('meta[name="theme-color"]')
+          if (themeColor !== null) {
+            themeColor.setAttribute('content', theme === 'light' ? '#efe9dc' : '#060809')
+          }
+          const colorScheme = document.querySelector('meta[name="color-scheme"]')
+          if (colorScheme !== null) colorScheme.setAttribute('content', theme)
+        } catch {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      })()
+    </script>
     <meta
       name="description"
       content="DSH Mobile — 在手机上远程驾驶 DeepSeek Harness。会话、流式时间线、审批与写权都在掌心里。"

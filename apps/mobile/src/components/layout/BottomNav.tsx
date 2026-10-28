@@ -37,7 +37,7 @@ export function BottomNav() {
             aria-label="新建会话"
             className={cn(
               'group relative -mt-7 flex size-[54px] items-center justify-center rounded-full',
-              'bg-signal text-[#0a1006] shadow-[0_18px_42px_-14px_rgba(201,247,90,0.75)]',
+              'bg-signal text-on-signal shadow-fab',
               'transition-transform duration-200 hover:scale-105 active:scale-95 disabled:opacity-60',
             )}
           >
@@ -45,7 +45,7 @@ export function BottomNav() {
               aria-hidden
               className="absolute inset-0 rounded-full border border-signal/50 blur-[1px]"
             />
-            {creating ? <Spinner className="text-[#0a1006]" /> : <Plus className="size-6" />}
+            {creating ? <Spinner className="text-on-signal" /> : <Plus className="size-6" />}
           </button>
         </div>
 

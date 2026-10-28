@@ -14,15 +14,14 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-signal text-[#0a1006] hover:bg-signal-strong active:bg-signal shadow-[0_12px_36px_-16px_rgba(201,247,90,0.65)]',
+  primary: 'bg-signal text-on-signal hover:bg-signal-strong active:bg-signal shadow-primary',
   secondary:
     'border border-line bg-ink-800 text-bone hover:border-ink-500 hover:bg-ink-700 active:bg-ink-800',
-  ghost: 'text-mist hover:bg-white/[0.055] hover:text-bone active:bg-white/[0.08]',
-  outline: 'border border-line text-bone hover:border-ink-500 hover:bg-white/[0.035]',
+  ghost: 'text-mist hover:bg-wash hover:text-bone active:bg-wash-strong',
+  outline: 'border border-line text-bone hover:border-ink-500 hover:bg-wash-soft',
   danger:
     'border border-coral/25 bg-coral/10 text-coral hover:border-coral/45 hover:bg-coral/15 active:bg-coral/20',
-  subtle: 'bg-white/[0.045] text-bone hover:bg-white/[0.075] active:bg-white/[0.09]',
+  subtle: 'bg-wash-soft text-bone hover:bg-wash-strong active:bg-wash-strong',
 }
 
 const SIZES: Record<ButtonSize, string> = {

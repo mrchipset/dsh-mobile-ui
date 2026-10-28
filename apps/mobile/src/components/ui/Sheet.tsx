@@ -33,16 +33,16 @@ export function Sheet({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="sheet-overlay fixed inset-0 z-50 bg-black/72 backdrop-blur-[3px]" />
+        <Dialog.Overlay className="sheet-overlay fixed inset-0 z-50 bg-scrim backdrop-blur-[3px]" />
         <Dialog.Content
           className={cn(
             'sheet-panel fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90dvh] w-full max-w-[560px] flex-col',
-            'rounded-t-[30px] border-t border-line bg-ink-900/97 shadow-[0_-30px_80px_-30px_rgba(0,0,0,0.9)]',
+            'rounded-t-[30px] border-t border-line bg-ink-900/97 shadow-sheet',
             'outline-none',
             className,
           )}
         >
-          <div aria-hidden className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/15" />
+          <div aria-hidden className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-handle" />
           <header className="flex items-start justify-between gap-4 px-5 pb-4 pt-4">
             <div className="min-w-0">
               {eyebrow !== undefined ? (
@@ -59,7 +59,7 @@ export function Sheet({
             </div>
             <Dialog.Close
               aria-label="关闭"
-              className="tap -mr-1 -mt-1 flex shrink-0 items-center justify-center rounded-full text-mute transition hover:bg-white/[0.06] hover:text-bone"
+              className="tap -mr-1 -mt-1 flex shrink-0 items-center justify-center rounded-full text-mute transition hover:bg-wash hover:text-bone"
             >
               <X className="size-5" />
             </Dialog.Close>

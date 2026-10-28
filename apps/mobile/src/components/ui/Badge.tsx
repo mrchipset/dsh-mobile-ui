@@ -8,7 +8,7 @@ const TONES: Record<BadgeTone, string> = {
   coral: 'border-coral/25 bg-coral/10 text-coral',
   amber: 'border-amber/25 bg-amber/10 text-amber',
   ice: 'border-ice/25 bg-ice/10 text-ice',
-  muted: 'border-line bg-white/[0.035] text-mist',
+  muted: 'border-line bg-wash-soft text-mist',
   ink: 'border-transparent bg-ink-800 text-mist',
 }
 

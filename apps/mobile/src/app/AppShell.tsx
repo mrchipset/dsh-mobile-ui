@@ -3,6 +3,7 @@ import { type ReactNode, useEffect } from 'react'
 import { Toaster } from 'sonner'
 import { BottomNav } from '../components/layout/BottomNav'
 import { useBridgeStore } from '../store/useBridgeStore'
+import { useTheme } from '../theme/ThemeProvider'
 import { ConnectingScreen, SplashScreen, WelcomeScreen } from './BootScreens'
 
 export function AppShell() {
@@ -14,6 +15,7 @@ export function AppShell() {
   const everConnected = useBridgeStore((state) => state.everConnected)
   const pendingNavigation = useBridgeStore((state) => state.pendingNavigation)
   const consumeNavigation = useBridgeStore((state) => state.consumeNavigation)
+  const { theme } = useTheme()
 
   const pathname = useLocation({ select: (location) => location.pathname })
   const navigate = useNavigate()
@@ -56,18 +58,18 @@ export function AppShell() {
         {booted && (mode === 'demo' || showApp) && !isChat ? <BottomNav /> : null}
       </div>
       <Toaster
-        theme="dark"
+        theme={theme}
         position="top-center"
         offset={14}
         gap={8}
         closeButton
         toastOptions={{
           style: {
-            background: 'rgba(13, 18, 20, 0.96)',
-            border: '1px solid #232c2e',
-            color: '#f3f0e7',
+            background: 'color-mix(in srgb, var(--color-ink-900) 96%, transparent)',
+            border: '1px solid var(--color-line)',
+            color: 'var(--color-bone)',
             borderRadius: '16px',
-            boxShadow: '0 24px 60px -30px rgba(0, 0, 0, 0.95)',
+            boxShadow: 'var(--shadow-float)',
             fontFamily: 'Manrope, PingFang SC, Microsoft YaHei, sans-serif',
             fontSize: '13px',
           },

@@ -40,7 +40,7 @@ export function ChatHeader({
           type="button"
           onClick={onBack}
           aria-label="返回会话列表"
-          className="tap flex shrink-0 items-center justify-center rounded-full text-mist transition hover:bg-white/[0.06] hover:text-bone"
+          className="tap flex shrink-0 items-center justify-center rounded-full text-mist transition hover:bg-wash hover:text-bone"
         >
           <ArrowLeft className="size-5" />
         </button>

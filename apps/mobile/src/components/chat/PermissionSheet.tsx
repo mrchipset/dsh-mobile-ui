@@ -145,7 +145,7 @@ export function PermissionSheet({
                 isReject
                   ? 'border-coral/20 bg-coral/[0.055] text-coral hover:border-coral/40 hover:bg-coral/10'
                   : option.kind === 'allow_once'
-                    ? 'border-signal/30 bg-signal text-[#0a1006] hover:bg-signal-strong'
+                    ? 'border-signal/30 bg-signal text-on-signal hover:bg-signal-strong'
                     : 'border-line bg-ink-800 text-bone hover:border-ink-500 hover:bg-ink-700',
               )}
             >
@@ -155,7 +155,7 @@ export function PermissionSheet({
                   isReject
                     ? 'border-coral/25 bg-coral/10'
                     : option.kind === 'allow_once'
-                      ? 'border-[#0a1006]/15 bg-[#0a1006]/10'
+                      ? 'border-on-signal/15 bg-on-signal/10'
                       : 'border-line bg-ink-900',
                 )}
               >
@@ -170,7 +170,7 @@ export function PermissionSheet({
                 <span
                   className={cn(
                     'mt-0.5 block text-[10px] leading-4',
-                    option.kind === 'allow_once' ? 'text-[#0a1006]/60' : 'text-mute',
+                    option.kind === 'allow_once' ? 'text-on-signal/60' : 'text-mute',
                   )}
                 >
                   {option.kind === 'allow_once'
@@ -199,7 +199,7 @@ export function PermissionSheet({
             {Math.round(percent)}%
           </span>
         </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10">
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-track">
           <div
             className="permission-timer h-full rounded-full transition-[width] duration-1000 ease-linear"
             style={{ width: `${String(percent)}%` }}

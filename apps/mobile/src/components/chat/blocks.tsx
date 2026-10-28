@@ -49,7 +49,7 @@ function Markdown({ text }: { text: string }) {
 function UserMessage({ block }: { block: MessageBlock }) {
   return (
     <article className="flex justify-end">
-      <div className="max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bone px-4 py-3 text-[14px] leading-[1.65] text-[#111614] shadow-[0_18px_40px_-28px_rgba(243,240,231,0.55)]">
+      <div className="max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bubble px-4 py-3 text-[14px] leading-[1.65] text-bubble-ink shadow-bubble">
         <p className="whitespace-pre-wrap break-words">{block.text}</p>
         {block.images !== undefined && block.images.length > 0 ? (
           <div className="mt-2.5 grid grid-cols-2 gap-1.5">
@@ -260,7 +260,7 @@ function PlanCard({ block }: { block: PlanBlock }) {
         </div>
         <span className="font-mono text-[10px] tabular-nums text-signal">{percent}%</span>
       </header>
-      <div className="mx-3.5 h-0.5 overflow-hidden rounded-full bg-white/10">
+      <div className="mx-3.5 h-0.5 overflow-hidden rounded-full bg-track">
         <div
           className="h-full rounded-full bg-signal transition-[width] duration-500"
           style={{ width: `${String(percent)}%` }}

@@ -1,6 +1,7 @@
 import { ArrowRight, Eye, EyeOff, KeyRound, RefreshCw, Sparkles } from 'lucide-react'
 import { type CSSProperties, type FormEvent, useState } from 'react'
 import { Button } from '../components/ui/Button'
+import { ThemeQuickToggle } from '../components/ui/ThemeToggle'
 import { firstIssue, tokenSchema } from '../lib/validation'
 import { useBridgeStore } from '../store/useBridgeStore'
 
@@ -13,10 +14,12 @@ function BrandMark() {
           DSH
         </span>
       </div>
-      <div className="leading-tight">
-        <p className="font-mono text-[11px] font-medium tracking-[0.2em] text-bone">DSH MOBILE</p>
-        <p className="mt-0.5 font-mono text-[9px] tracking-[0.14em] text-mute">
-          DEEPSEEK HARNESS · ACP
+      <div className="min-w-0 leading-tight">
+        <p className="whitespace-nowrap font-mono text-[11px] font-medium tracking-[0.2em] text-bone">
+          DSH MOBILE
+        </p>
+        <p className="mt-0.5 whitespace-nowrap font-mono text-[9px] tracking-[0.14em] text-mute">
+          DEEPSEEK HARNESS<span className="hidden min-[360px]:inline"> · ACP</span>
         </p>
       </div>
     </div>
@@ -70,9 +73,14 @@ export function WelcomeScreen() {
     <div className="screen-scroll safe-top safe-bottom relative z-10 h-full overflow-y-auto">
       <div aria-hidden className="welcome-grid pointer-events-none absolute inset-0 opacity-70" />
       <div className="relative mx-auto flex min-h-full w-full max-w-[520px] flex-col px-5 pb-7">
-        <header className="flex items-center justify-between pt-5">
+        <header className="flex items-center justify-between gap-3 pt-5">
           <BrandMark />
-          <span className="font-mono text-[9px] tracking-[0.18em] text-mute">v0.0.0</span>
+          <div className="flex items-center gap-2">
+            <span className="hidden font-mono text-[9px] tracking-[0.18em] text-mute min-[360px]:inline">
+              v0.0.0
+            </span>
+            <ThemeQuickToggle />
+          </div>
         </header>
 
         <section
@@ -100,7 +108,7 @@ export function WelcomeScreen() {
 
         <form
           onSubmit={handleSubmit}
-          className="reveal card-sheen rounded-[26px] border border-line bg-ink-850/85 p-4 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.9)] backdrop-blur"
+          className="reveal card-sheen rounded-[26px] border border-line bg-ink-850/85 p-4 shadow-float backdrop-blur"
           style={formStyle}
         >
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -164,7 +172,7 @@ export function WelcomeScreen() {
           <button
             type="button"
             onClick={enterDemo}
-            className="tap mt-2.5 flex w-full items-center justify-center gap-2 rounded-full py-3 text-[13px] font-medium text-mist transition hover:bg-white/[0.04] hover:text-bone"
+            className="tap mt-2.5 flex w-full items-center justify-center gap-2 rounded-full py-3 text-[13px] font-medium text-mist transition hover:bg-wash-soft hover:text-bone"
           >
             <Sparkles aria-hidden className="size-4 text-ice" />
             先看看演示模式
@@ -202,8 +210,9 @@ export function ConnectingScreen() {
     <div className="screen-scroll safe-top safe-bottom relative z-10 h-full overflow-y-auto">
       <div aria-hidden className="welcome-grid pointer-events-none absolute inset-0 opacity-60" />
       <div className="relative mx-auto flex min-h-full w-full max-w-[520px] flex-col px-5 pb-8">
-        <header className="pt-5">
+        <header className="flex items-center justify-between gap-3 pt-5">
           <BrandMark />
+          <ThemeQuickToggle />
         </header>
 
         <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
@@ -214,7 +223,7 @@ export function ConnectingScreen() {
               className="absolute inset-4 animate-[spin-slow_7s_linear_infinite] rounded-full border border-dashed border-line"
             />
             <div aria-hidden className="absolute inset-0 animate-[spin-slow_3.4s_linear_infinite]">
-              <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 rounded-full bg-signal shadow-[0_0_18px_rgba(201,247,90,0.8)]" />
+              <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 rounded-full bg-signal shadow-glow" />
             </div>
             <div className="flex size-[88px] flex-col items-center justify-center rounded-full border border-line bg-ink-850/90">
               <span className="editorial text-[30px] leading-none text-bone">DSH</span>

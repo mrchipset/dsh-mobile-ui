@@ -180,8 +180,8 @@ export function Composer({
             className={cn(
               'flex size-11 shrink-0 items-center justify-center rounded-full transition',
               sendDisabled
-                ? 'bg-white/[0.06] text-mute'
-                : 'bg-signal text-[#0a1006] shadow-[0_10px_26px_-10px_rgba(201,247,90,0.7)] active:scale-95',
+                ? 'bg-wash text-mute'
+                : 'bg-signal text-on-signal shadow-primary active:scale-95',
             )}
           >
             <ArrowUp className="size-5" strokeWidth={2.2} />

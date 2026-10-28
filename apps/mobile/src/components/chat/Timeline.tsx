@@ -54,9 +54,9 @@ export function Timeline({
 
         {pendingPromptText !== null ? (
           <article className="flex justify-end">
-            <div className="max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bone/55 px-4 py-3 text-[14px] leading-[1.65] text-[#38403b]">
+            <div className="max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bubble/80 px-4 py-3 text-[14px] leading-[1.65] text-bubble-ink shadow-bubble">
               <p className="whitespace-pre-wrap break-words">{pendingPromptText}</p>
-              <p className="mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[9px] tracking-[0.06em] text-[#566159]">
+              <p className="mt-1.5 flex items-center justify-end gap-1.5 font-mono text-[9px] tracking-[0.06em] text-bubble-ink/70">
                 <Send aria-hidden className="size-2.5" />
                 发送中
               </p>

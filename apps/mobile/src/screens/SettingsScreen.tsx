@@ -16,6 +16,7 @@ import { McpStatusList } from '../components/settings/McpStatusList'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
+import { ThemeModePicker, ThemeQuickToggle } from '../components/ui/ThemeToggle'
 import { DEMO_PRIMARY_SESSION_ID } from '../lib/demo'
 import { maskDevice } from '../lib/format'
 import { useBridgeStore } from '../store/useBridgeStore'
@@ -101,7 +102,10 @@ export function SettingsScreen() {
                   </p>
                 </div>
               </div>
-              <StatusPill status={status} />
+              <div className="flex items-center gap-1">
+                <StatusPill status={status} />
+                <ThemeQuickToggle />
+              </div>
             </div>
 
             <div className="mt-7">
@@ -112,6 +116,27 @@ export function SettingsScreen() {
         </header>
 
         <div className="mx-auto w-full max-w-[560px] space-y-6 px-5 pb-8 pt-2">
+          <section>
+            <SectionLabel>APPEARANCE</SectionLabel>
+            <div className="rounded-[24px] border border-line bg-ink-850/75 p-4">
+              <div className="mb-3.5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-medium text-bone">界面主题</p>
+                  <p className="mt-1 text-[11px] leading-5 text-mist">
+                    暖纸适合白天，深色适合夜间。选择会保存在本机。
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full border border-line bg-ink-900 px-2.5 py-1 font-mono text-[8.5px] tracking-[0.08em] text-mute">
+                  THEME
+                </span>
+              </div>
+              <ThemeModePicker />
+              <p className="mt-2.5 px-1 text-[9px] leading-4 text-mute/80">
+                首次打开会跟随系统配色；手动选择后不再自动切换。
+              </p>
+            </div>
+          </section>
+
           <section>
             <SectionLabel>BRIDGE</SectionLabel>
             <div className="card-sheen overflow-hidden rounded-[24px] border border-line bg-ink-850/75">
@@ -165,13 +190,13 @@ export function SettingsScreen() {
                 ) : null}
 
                 {mode === 'demo' ? (
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-2">
                     <Button
                       variant="primary"
                       onClick={exitDemo}
                       leading={<Wifi className="size-4" />}
                     >
-                      连接真实 Bridge
+                      连接 Bridge
                     </Button>
                     <Button
                       variant="secondary"
@@ -182,7 +207,7 @@ export function SettingsScreen() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 gap-2.5 min-[380px]:grid-cols-2">
                     <Button
                       variant="secondary"
                       onClick={reconnect}
@@ -225,7 +250,7 @@ export function SettingsScreen() {
                 type="button"
                 onClick={refreshMcp}
                 aria-label="刷新 MCP 状态"
-                className="tap -mr-2 flex items-center justify-center rounded-full text-mute transition hover:text-bone"
+                className="tap flex items-center justify-center rounded-full text-mute transition hover:text-bone"
               >
                 {mcpLoading ? <Spinner /> : <RefreshCw className="size-4" />}
               </button>

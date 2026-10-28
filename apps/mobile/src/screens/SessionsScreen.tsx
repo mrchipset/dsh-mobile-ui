@@ -4,6 +4,7 @@ import { StatusPill } from '../components/layout/StatusPill'
 import { SessionRow } from '../components/sessions/SessionRow'
 import { Button } from '../components/ui/Button'
 import { Spinner } from '../components/ui/Spinner'
+import { ThemeQuickToggle } from '../components/ui/ThemeToggle'
 import { formatShortDate } from '../lib/format'
 import { useBridgeStore } from '../store/useBridgeStore'
 
@@ -76,13 +77,14 @@ export function SessionsScreen() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <StatusPill status={status} />
+                <ThemeQuickToggle className="hidden min-[360px]:flex" />
                 <button
                   type="button"
                   onClick={refreshSessions}
                   aria-label="刷新会话列表"
-                  className="tap flex items-center justify-center rounded-full text-mute transition hover:bg-white/[0.055] hover:text-bone"
+                  className="tap flex items-center justify-center rounded-full text-mute transition hover:bg-wash hover:text-bone"
                 >
                   {listLoading ? (
                     <Spinner />

@@ -191,7 +191,7 @@ export function ChatScreen({ sessionId }: { sessionId: string }) {
               setAtBottom(true)
               scrollToBottom(true)
             }}
-            className="absolute bottom-4 right-4 z-20 flex h-10 items-center gap-1.5 rounded-full border border-line bg-ink-850/95 px-3 font-mono text-[10px] text-mist shadow-[0_14px_35px_-12px_rgba(0,0,0,0.9)] backdrop-blur transition hover:border-signal/25 hover:text-bone"
+            className="absolute bottom-4 right-4 z-20 flex h-10 items-center gap-1.5 rounded-full border border-line bg-ink-850/95 px-3 font-mono text-[10px] text-mist shadow-scroll backdrop-blur transition hover:border-signal/25 hover:text-bone"
           >
             <ArrowDown className="size-3.5" />
             回到底部
