@@ -19,4 +19,5 @@ Thumbs.db
 .vite/
 .turbo/
 .playwright-mcp/
+.slim/deepwork/
 *.tsbuildinfo
