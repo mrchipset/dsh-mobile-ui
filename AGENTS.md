@@ -22,6 +22,14 @@ DSH Mobile UI: a mobile-first web client plus a Node bridge for DeepSeek Harness
 - `pnpm build`
 - `pnpm smoke:acp` — requires `.env` and a local DSH build
 
+## Verification
+
+- After implementing a feature or fix, add sensible unit tests for testable behavior and make them pass. Cover the happy path plus the important edge cases; do not add tests that only mirror implementation details.
+- Run the narrowest relevant test first, then `pnpm test` when the change can affect other packages.
+- For UI/design tasks, when the environment allows, start the real dev server and verify with Playwright at 320px and 390×844. Check layout, overflow, safe-area, focus, and the main interactions. Do not claim visual correctness from code alone.
+- For Bridge/ACP changes, unit tests do not prove integration. Run `pnpm smoke:acp` against a real DSH build when `.env` is configured.
+- Record what was actually verified, and what was not, in the design note and final report.
+
 ## Non-negotiables
 
 - TypeScript strict, ESM. No `any`, `@ts-ignore`, or unchecked `JSON.parse` of protocol data.
@@ -37,11 +45,11 @@ DSH Mobile UI: a mobile-first web client plus a Node bridge for DeepSeek Harness
 
 1. Read `doc/` and relevant `notes/`.
 2. Make a short plan; keep changes scoped.
-3. Implement and unit-test together.
-4. Verify narrowly first, then `pnpm typecheck && pnpm test` (and `pnpm build` when relevant).
+3. Implement and unit-test together. Add focused tests for new behavior whenever it is testable.
+4. Verify: narrow tests, then `pnpm typecheck && pnpm test` (and `pnpm build` when relevant). For UI, exercise the running app with Playwright. For Bridge/ACP, run the real smoke test when configured.
 5. Write a design note (below).
 6. Commit the coherent milestone (below).
-7. Report: changes, verification, remaining risk.
+7. Report: changes, verification (including what was not verified), remaining risk.
 
 ## Commits (required per milestone)
 
@@ -73,11 +81,13 @@ Every non-trivial change gets a committed note under `notes/`.
 When dispatching work to a subagent, include:
 
 - exact write scope and non-overlapping ownership
-- required verification commands
+- required verification commands, including unit tests for testable behavior
+- for UI work: Playwright verification against the real dev server when the environment allows
+- for Bridge/ACP work: the real `pnpm smoke:acp` check when `.env` is configured
 - “write a note under `notes/` and commit the milestone when tests pass”
 - the expected commit type/scope
 
-Do not accept a delegate's “done” without a commit hash, note path, and verification output.
+Do not accept a delegate's “done” without a commit hash, note path, and verification output. “Builds” is not a substitute for tests or browser verification.
 
 ## UI
 
