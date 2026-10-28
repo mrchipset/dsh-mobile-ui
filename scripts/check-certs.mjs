@@ -14,7 +14,9 @@ if (missing.length > 0) {
   console.error('HTTPS dev certificates are missing:')
   for (const file of missing) console.error(`  - ${file}`)
   console.error('')
-  console.error('Generate them from the repository root (replace 192.168.71.5 if your LAN IP changes):')
+  console.error(
+    'Generate them from the repository root (replace 192.168.71.5 if your LAN IP changes):',
+  )
   console.error('')
   console.error('  bash:')
   console.error('    mkdir -p .certs')
