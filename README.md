@@ -23,7 +23,9 @@ cp .env.example .env      # Windows: Copy-Item .env.example .env
 pnpm dev                  # bridge :8787 + mobile :5173
 ```
 
-默认 `.env.example` 指向本机 `C:/Users/Zouyu/CodeReviews/deepseek-harness` 的源码运行方式。若使用已安装的 `dsh`，改为：
+默认 `.env.example` 指向本机 `C:/Users/Zouyu/CodeReviews/deepseek-harness` 的源码运行方式。DSH 源码入口使用 `import.meta.main`，需要 Node `^22.19` 或 `>=24`；若默认 Node 较旧，把 `DSH_BIN` 指向受支持的 `node` 可执行文件。
+
+若使用已安装的 `dsh`，改为：
 
 ```env
 DSH_BIN=dsh
