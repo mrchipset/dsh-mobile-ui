@@ -22,7 +22,7 @@ The mobile UI must be usable before a Bridge is configured, but must also exerci
 - The store keeps raw `StoredUpdate[]` per session and re-folds with `@dsh-mobile/protocol`. Snapshots include raw updates, so incremental updates stay correct after a reconnect.
 - WS client validates every frame with zod, authenticates with the shared token, reconnects with backoff, and re-attaches the active session with its last seq.
 - Demo mode seeds a full timeline (message/thought/tool/plan/notice), MCP statuses, simulated approval, and local reply/cancel behavior.
-- `enterDemo()` only auto-opens the demo chat from `/` or `/sessions`; a direct `/settings` or session deep link wins.
+- `enterDemo()` does not hijack the current route; the demo catalog, `/settings`, and session deep links all remain reachable after boot.
 - Add `mobile-web-app-capable` alongside the legacy Apple meta tag.
 
 ## Tradeoffs / risks

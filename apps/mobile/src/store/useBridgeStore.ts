@@ -578,10 +578,8 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   enterDemo: () => {
     clearDemoTimers()
     ensureClient().disconnect()
-    // Only auto-open the demo chat from the catalog/root. A direct link to
-    // /settings or a specific session must win over the demo landing target.
-    const pathname = typeof window === 'undefined' ? '' : window.location.pathname
-    const shouldNavigate = pathname === '/' || pathname === '/sessions'
+    // Entering demo mode must not hijack the current route. The catalog,
+    // settings, and session deep links all remain reachable after boot.
     const deviceId = get().deviceId.length > 0 ? get().deviceId : DEMO_DEVICE_ID
     const sessions = createDemoSessions(Date.now(), deviceId)
     const sessionMap = Object.fromEntries(sessions.map((session) => [session.id, session]))
@@ -611,7 +609,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
       mcp: createDemoMcp(),
       mcpLoading: false,
       leaseBusy: false,
-      pendingNavigation: shouldNavigate ? DEMO_PRIMARY_SESSION_ID : null,
+      pendingNavigation: null,
       lastError: null,
     })
   },
