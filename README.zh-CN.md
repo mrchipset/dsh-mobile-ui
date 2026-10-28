@@ -27,13 +27,13 @@ Bridge 会把 ACP 会话的 `cwd` 固定为 `WORKSPACE_ROOT`，并始终发送 `
 
 ## 仓库结构
 
-| 路径 | 用途 |
-| --- | --- |
-| `packages/protocol` | 共享类型、zod 线协议、从 ACP update 到渲染 blocks 的纯函数 `fold` |
-| `apps/bridge` | Fastify HTTP/WS 服务、ACP supervisor、SQLite 持久化、租约与审批路由 |
-| `apps/mobile` | Vite + React 19 + Tailwind v4 + shadcn 风格 UI |
-| `doc/` | 架构与实现规范 |
-| `notes/` | 已提交的设计决策与取舍 |
+| 路径                | 用途                                                                |
+| ------------------- | ------------------------------------------------------------------- |
+| `packages/protocol` | 共享类型、zod 线协议、从 ACP update 到渲染 blocks 的纯函数 `fold`   |
+| `apps/bridge`       | Fastify HTTP/WS 服务、ACP supervisor、SQLite 持久化、租约与审批路由 |
+| `apps/mobile`       | Vite + React 19 + Tailwind v4 + shadcn 风格 UI                      |
+| `doc/`              | 架构与实现规范                                                      |
+| `notes/`            | 已提交的设计决策与取舍                                              |
 
 ## 环境要求
 
@@ -77,54 +77,68 @@ DSH_CWD=C:/path/to/workspace
 
 ## 配置
 
-| 变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `BRIDGE_PORT` | `8787` | HTTP 与 WebSocket 端口 |
-| `BRIDGE_SECRET` | 必填 | 移动端使用的共享设备令牌 |
-| `DB_PATH` | `./data/bridge.db` | SQLite 数据库路径 |
-| `WORKSPACE_ROOT` | 当前目录 | 新会话固定的 ACP `cwd` |
-| `DSH_BIN` | `dsh` | DSH 可执行文件 |
-| `DSH_ARGS` | `["--profile","acp"]` | 传给 `DSH_BIN` 的 JSON 数组参数 |
-| `DSH_CWD` | `WORKSPACE_ROOT` | DSH 子进程工作目录 |
-| `DSH_HOME` | 继承环境 | 可选的 DSH 子进程 `DSH_HOME` |
-| `ACP_ENABLED` | `true` | 是否启动 ACP supervisor；`false` 时 HTTP/WS 仍可用 |
-| `RETENTION_UPDATES` | `5000` | 每个会话保留的 update 数量 |
-| `LEASE_GRACE_MS` | `10000` | 写权交接宽限期 |
-| `PERMISSION_TTL_MS` | `180000` | 未处理审批的自动取消时间 |
-| `LOG_LEVEL` | `info` | Pino 日志级别 |
-| `STT_ENABLED` | `false` | 启用 `POST /api/transcribe` 与 STT 就绪探测 |
-| `STT_BASE_URL` | `http://127.0.0.1:8000/v1` | FunASR OpenAI 兼容服务地址 |
-| `STT_MODEL` | `paraformer` | FunASR 模型别名；`sensevoice` 更快 |
-| `STT_API_KEY_ENV` | 未设置 | 可选 STT 密钥所在的环境变量名 |
+| 变量                | 默认值                     | 用途                                               |
+| ------------------- | -------------------------- | -------------------------------------------------- |
+| `BRIDGE_PORT`       | `8787`                     | HTTP 与 WebSocket 端口                             |
+| `BRIDGE_SECRET`     | 必填                       | 移动端使用的共享设备令牌                           |
+| `DB_PATH`           | `./data/bridge.db`         | SQLite 数据库路径                                  |
+| `WORKSPACE_ROOT`    | 当前目录                   | 新会话固定的 ACP `cwd`                             |
+| `DSH_BIN`           | `dsh`                      | DSH 可执行文件                                     |
+| `DSH_ARGS`          | `["--profile","acp"]`      | 传给 `DSH_BIN` 的 JSON 数组参数                    |
+| `DSH_CWD`           | `WORKSPACE_ROOT`           | DSH 子进程工作目录                                 |
+| `DSH_HOME`          | 继承环境                   | 可选的 DSH 子进程 `DSH_HOME`                       |
+| `ACP_ENABLED`       | `true`                     | 是否启动 ACP supervisor；`false` 时 HTTP/WS 仍可用 |
+| `RETENTION_UPDATES` | `5000`                     | 每个会话保留的 update 数量                         |
+| `LEASE_GRACE_MS`    | `10000`                    | 写权交接宽限期                                     |
+| `PERMISSION_TTL_MS` | `180000`                   | 未处理审批的自动取消时间                           |
+| `LOG_LEVEL`         | `info`                     | Pino 日志级别                                      |
+| `STT_ENABLED`       | `false`                    | 启用 `POST /api/transcribe` 与 STT 就绪探测        |
+| `STT_BASE_URL`      | `http://127.0.0.1:8000/v1` | FunASR OpenAI 兼容服务地址                         |
+| `STT_MODEL`         | `paraformer`               | FunASR 模型别名；`sensevoice` 更快                 |
+| `STT_API_KEY_ENV`   | 未设置                     | 可选 STT 密钥所在的环境变量名                      |
 
 ## 语音输入
 
 语音输入会在浏览器录制短音频并上传到 Bridge，再把 FunASR 转写结果插入草稿；发送仍需用户手动确认。
 
-- 配置 `STT_ENABLED=true`、`STT_BASE_URL=http://127.0.0.1:8000/v1`（同机）或 `http://192.168.71.5:8000/v1`（局域网 GPU 主机）、`STT_MODEL=paraformer`。`/health` 会通过 `/v1/models` 返回缓存后的就绪状态。
-- 手机需要 HTTPS。在仓库根目录执行：
+- FunASR 部署：见 [deploy/stt/README.md](deploy/stt/README.md)。设置 `STT_ENABLED=true`、`STT_BASE_URL=http://127.0.0.1:8000/v1`（同机）或 `http://192.168.71.5:8000/v1`（局域网 GPU 主机）、`STT_MODEL=paraformer`。`/health` 通过 `/v1/models` 暴露服务端 `stt.reachable` 诊断信息（移动端暂未消费）；它只说明服务或预加载别名在线，不代表单个模型已就绪。
+- 手机需要 HTTPS。启动前先停止占用 `5174` 的 HTTP 实例。在仓库根目录创建证书；如果局域网 IP 变化，请替换 `192.168.71.5`。
+
+  bash：
+
   ```bash
+  mkdir -p .certs
   mkcert -install
-  mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 <LAN_IP> localhost 127.0.0.1
+  mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 localhost 127.0.0.1
   pnpm dev:mobile:https
   ```
-- 打开 `https://<LAN_IP>:5174`。Vite 会把 `/api` 与 `/ws` 代理到 `127.0.0.1:8787` 的 Bridge。
+
+  PowerShell：
+
+  ```powershell
+  New-Item -ItemType Directory -Force .certs
+  mkcert -install
+  mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 localhost 127.0.0.1
+  pnpm dev:mobile:https
+  ```
+- 打开 `https://192.168.71.5:5174`。Vite 会把 `/api` 与 `/ws` 代理到 `127.0.0.1:8787` 的 Bridge。
 - 手机上安装 mkcert 根证书；iPhone 还需在“设置 → 通用 → 关于本机 → 证书信任设置”中开启完全信任，Android 则作为用户 CA 安装。
-- 直接使用 `http://<LAN_IP>` 时无法调用真实麦克风。请在专用网络放行 `5174`；仅当手机直连 Bridge 时才需要放行 `8787`。演示模式无需麦克风或 STT 服务。
+- 直接使用 `http://192.168.71.5:5174` 时无法调用真实麦克风。请在专用网络放行 `5174`；仅当手机直连 Bridge 时才需要放行 `8787`。演示模式无需麦克风或 STT 服务。
 
 ## 脚本
 
-| 命令 | 说明 |
-| --- | --- |
-| `pnpm dev` | 同时启动 Bridge 与 Mobile |
-| `pnpm dev:bridge` | 只启动 Bridge |
-| `pnpm dev:mobile` | 只启动 Vite dev server |
-| `pnpm dev:mobile:https` | 在 `0.0.0.0:5174` 启动 Vite HTTPS（需要 `.certs/`） |
-| `pnpm typecheck` | 全仓库 TypeScript 检查 |
-| `pnpm test` | Protocol、Bridge 与 Mobile 单元测试 |
-| `pnpm build` | 构建 Bridge 与 Mobile |
-| `pnpm lint` / `pnpm format` | Biome 检查与格式化 |
-| `pnpm smoke:acp` | 真实 ACP 冒烟测试；需要 `.env` 和本地 DSH 构建 |
+| 命令                        | 说明                                                |
+| --------------------------- | --------------------------------------------------- |
+| `pnpm dev`                  | 同时启动 Bridge 与 Mobile                           |
+| `pnpm dev:bridge`           | 只启动 Bridge                                       |
+| `pnpm dev:mobile`           | 只启动 Vite dev server                              |
+| `pnpm dev:mobile:https`     | 在 `0.0.0.0:5174` 启动 Vite HTTPS（需要 `.certs/`） |
+| `pnpm typecheck`            | 全仓库 TypeScript 检查                              |
+| `pnpm test`                 | Protocol、Bridge 与 Mobile 单元测试                 |
+| `pnpm build`                | 构建 Bridge 与 Mobile                               |
+| `pnpm lint` / `pnpm format` | Biome 检查与格式化                                  |
+| `pnpm smoke:acp`            | 真实 ACP 冒烟测试；需要 `.env` 和本地 DSH 构建      |
+| `pnpm smoke:stt`            | 真实 FunASR 冒烟测试；需要 deploy 服务和 `.env`     |
 
 ## 验证
 
@@ -164,6 +178,8 @@ pnpm smoke:acp
 
 - [架构](doc/mobile-bridge-architecture.md)
 - [实现规范](doc/mobile-bridge-design.md)
+- [语音输入设计](doc/voice-input-design.md)
+- [FunASR 部署](deploy/stt/README.md)
 - [设计记录](notes/)
 
 ## README 语言

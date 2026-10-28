@@ -41,3 +41,7 @@ The mobile composer only accepts typed text. Users want press-and-hold voice inp
 - Confirm the pinned FunASR image and health route in this environment.
 - Add ffmpeg transcoding only if FunASR cannot decode webm/mp4.
 - Test iPhone Safari and Android Chrome over local HTTPS.
+
+## Superseded
+
+- The SenseVoiceSmall default above is superseded by `paraformer` (Chinese + punctuation); `sensevoice` remains a faster alternative. Current deployment and readiness details live in `notes/2026-10-28-stt-deploy.md`.

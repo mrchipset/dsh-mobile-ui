@@ -13,14 +13,15 @@
     "dev": "concurrently -n bridge,mobile -c blue,magenta \"pnpm dev:bridge\" \"pnpm dev:mobile\"",
     "dev:bridge": "pnpm --filter @dsh-mobile/bridge dev",
     "dev:mobile": "pnpm --filter @dsh-mobile/mobile dev",
-    "dev:mobile:https": "pnpm --filter @dsh-mobile/mobile exec vite --port 5174 --host 0.0.0.0",
+    "dev:mobile:https": "node scripts/check-certs.mjs && pnpm --filter @dsh-mobile/mobile exec vite --port 5174 --host 0.0.0.0 --strictPort",
     "build": "pnpm -r build",
     "typecheck": "tsc -p packages/protocol/tsconfig.json --noEmit && tsc -p apps/bridge/tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "smoke:acp": "pnpm --filter @dsh-mobile/bridge smoke:acp"
+    "smoke:acp": "pnpm --filter @dsh-mobile/bridge smoke:acp",
+    "smoke:stt": "tsx scripts/smoke-stt.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",

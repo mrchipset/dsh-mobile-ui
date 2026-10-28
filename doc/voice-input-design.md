@@ -36,13 +36,29 @@ Non-goals for v1:
 
 Ignoring production security does not remove this browser requirement. For Android + iPhone, use local HTTPS:
 
-1. `mkcert -install`
-2. `mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 <LAN_IP> localhost 127.0.0.1`
-3. `pnpm dev:mobile:https` serves Vite on `https://<LAN_IP>:5174`.
-4. Install the mkcert root CA on the phone; iPhone also enables full trust (Settings → General → About → Certificate Trust Settings). Android installs it as a user CA.
-5. Vite proxies `/api` to `http://127.0.0.1:8787` and `/ws` to `ws://127.0.0.1:8787`.
+Stop any existing HTTP dev server on port `5174` first. From the repo root:
 
-The Bridge remains HTTP and is reached only through the Vite proxy. Plain `http://<LAN_IP>` disables real `getUserMedia`; only HTTPS or localhost enables the microphone. `.certs/` is git-ignored. Allow Vite `5174` (and Bridge `8787` if phones connect directly) through the Windows firewall on Private networks.
+bash:
+```bash
+mkdir -p .certs
+mkcert -install
+mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 localhost 127.0.0.1
+pnpm dev:mobile:https
+```
+
+PowerShell:
+```powershell
+New-Item -ItemType Directory -Force .certs
+mkcert -install
+mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 localhost 127.0.0.1
+pnpm dev:mobile:https
+```
+
+Replace `192.168.71.5` if the LAN IP changes. `mkcert` is preferred; if it is unavailable, create an equivalent local CA and leaf certificate with OpenSSL and install that CA on the phone. `pnpm dev:mobile:https` checks for both `.certs/` files and uses Vite `--strictPort` on `https://192.168.71.5:5174`.
+
+Install the mkcert root CA on the phone; iPhone also enables full trust (Settings → General → About → Certificate Trust Settings). Android installs it as a user CA.
+
+The Bridge remains HTTP and is reached only through the Vite proxy, which forwards `/api` to `http://127.0.0.1:8787` and `/ws` to `ws://127.0.0.1:8787`. Plain `http://192.168.71.5:5174` disables real `getUserMedia`; only HTTPS or localhost enables the microphone. `.certs/` is git-ignored. Allow Vite `5174` (and Bridge `8787` if phones connect directly) through the Windows firewall on Private networks.
 
 Android-only alternative for quick testing: `adb reverse tcp:5173 tcp:5173` and `adb reverse tcp:8787 tcp:8787`, then open `http://localhost:5173`. This is not the chosen path because iPhone must work too.
 
@@ -127,7 +143,7 @@ Extend `/health`:
 }
 ```
 
-`reachable` probes `${STT_BASE_URL}/models` with a ~2 s timeout and a ~30 s cache. STT downtime must not fail or hang the Bridge health check. When `STT_ENABLED=false`, `/health` consistently reports `reachable: false` and does not probe.
+`reachable` probes `${STT_BASE_URL}/models` with a ~2 s timeout and a ~30 s cache. STT downtime must not fail or hang the Bridge health check. When `STT_ENABLED=false`, `/health` consistently reports `reachable: false` and does not probe. This is server-side diagnostics only; the mobile client does not consume it yet. `/v1/models` proves the server or a preloaded alias is up, not that a specific model has completed loading.
 
 ### STT adapter
 
@@ -152,6 +168,7 @@ Implement `OpenAICompatibleStt` with Node's built-in `fetch`, `FormData`, and `B
 ## 6. Bridge configuration
 
 ```env
+# Start deploy/stt first, then enable:
 STT_ENABLED=true
 STT_PROVIDER=funasr
 STT_BASE_URL=http://127.0.0.1:8000/v1

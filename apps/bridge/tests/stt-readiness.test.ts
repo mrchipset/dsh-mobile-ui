@@ -56,6 +56,19 @@ describe('SttReadiness', () => {
     expect(await second.reachable()).toBe(false)
   })
 
+  it('never throws when the probe implementation rejects', async () => {
+    const throwingFetch = vi.fn(() => {
+      throw new Error('synchronous probe failure')
+    })
+    const readiness = new SttReadiness({
+      baseUrl: 'http://stt:8000/v1',
+      fetchImpl: throwingFetch as unknown as typeof fetch,
+    })
+
+    await expect(readiness.reachable()).resolves.toBe(false)
+    expect(throwingFetch).toHaveBeenCalledTimes(1)
+  })
+
   it('times out without hanging', async () => {
     const never = vi.fn().mockReturnValue(new Promise<Response>(() => {}))
     const readiness = new SttReadiness({

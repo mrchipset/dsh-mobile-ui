@@ -45,6 +45,7 @@ export class SttReadiness implements SttReadinessProbe {
     if (this.inFlight !== undefined) return this.inFlight
 
     this.inFlight = this.probe()
+      .catch(() => false)
       .then((value) => {
         this.cached = { value, expiresAt: this.now() + this.cacheTtlMs }
         return value
