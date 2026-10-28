@@ -5,7 +5,7 @@ import { verifyToken } from '../auth.js'
 import type { Config } from '../config.js'
 import type { Logger } from '../logger.js'
 import type { SessionRepository } from '../ports.js'
-import { type SpeechToText, SttError } from '../stt/index.js'
+import { type SpeechToText, SttError, type SttReadinessProbe } from '../stt/index.js'
 
 export const BRIDGE_VERSION = '0.0.0'
 
@@ -27,6 +27,7 @@ export interface HttpRouteDeps {
   repo: SessionRepository
   supervisor?: AcpSupervisor
   stt?: SpeechToText
+  sttReadiness?: SttReadinessProbe
   logger: Logger
 }
 
@@ -59,6 +60,15 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
 
     const agent = deps.config.acpEnabled ? (deps.supervisor?.status ?? 'disconnected') : 'disabled'
 
+    let reachable = false
+    if (deps.config.sttEnabled && deps.sttReadiness !== undefined) {
+      try {
+        reachable = await deps.sttReadiness.reachable()
+      } catch {
+        reachable = false
+      }
+    }
+
     const body = {
       ok: dbState === 'ok',
       uptime: process.uptime(),
@@ -70,6 +80,7 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         enabled: deps.config.sttEnabled,
         provider: deps.config.sttProvider,
         model: deps.config.sttModel,
+        reachable,
       },
     }
 

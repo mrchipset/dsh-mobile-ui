@@ -6,7 +6,7 @@ import type { Config } from './config.js'
 import { registerHttpRoutes } from './http/server.js'
 import type { Logger } from './logger.js'
 import type { LeaseManagerPort, SessionRepository } from './ports.js'
-import type { SpeechToText } from './stt/index.js'
+import type { SpeechToText, SttReadinessProbe } from './stt/index.js'
 import { registerWsRoutes } from './ws/routes.js'
 
 export interface AppDeps {
@@ -15,6 +15,7 @@ export interface AppDeps {
   lease: LeaseManagerPort
   supervisor?: AcpSupervisor
   stt?: SpeechToText
+  sttReadiness?: SttReadinessProbe
   logger: Logger
   permissionTtlMs?: number
 }

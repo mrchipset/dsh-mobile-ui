@@ -92,6 +92,25 @@ DSH_CWD=C:/path/to/workspace
 | `LEASE_GRACE_MS` | `10000` | Writer handoff grace period |
 | `PERMISSION_TTL_MS` | `180000` | Auto-cancel time for unanswered approvals |
 | `LOG_LEVEL` | `info` | Pino log level |
+| `STT_ENABLED` | `false` | Enable `POST /api/transcribe` and STT readiness |
+| `STT_BASE_URL` | `http://127.0.0.1:8000/v1` | FunASR OpenAI-compatible base URL |
+| `STT_MODEL` | `paraformer` | FunASR model alias; `sensevoice` is faster |
+| `STT_API_KEY_ENV` | unset | Name of an env var holding an optional STT key |
+
+## Voice input
+
+Voice input records a short clip in the browser, uploads it to the Bridge, and inserts the FunASR transcript into the draft. Sending stays manual.
+
+- Configure FunASR with `STT_ENABLED=true`, `STT_BASE_URL=http://127.0.0.1:8000/v1` (same host) or `http://192.168.71.5:8000/v1` (LAN GPU host), and `STT_MODEL=paraformer`. `/health` reports cached readiness from `/v1/models`.
+- Phones need HTTPS. From the repo root:
+  ```bash
+  mkcert -install
+  mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 <LAN_IP> localhost 127.0.0.1
+  pnpm dev:mobile:https
+  ```
+- Open `https://<LAN_IP>:5174`. Vite proxies `/api` and `/ws` to the Bridge on `127.0.0.1:8787`.
+- Install the mkcert root CA on the phone. iPhone also needs full trust (Settings → General → About → Certificate Trust Settings); Android installs it as a user CA.
+- Plain `http://<LAN_IP>` disables real microphone capture. Allow port `5174` through the firewall on Private networks; allow `8787` only if a phone connects to the Bridge directly. Demo mode simulates voice input without a mic or STT service.
 
 ## Scripts
 
@@ -100,8 +119,9 @@ DSH_CWD=C:/path/to/workspace
 | `pnpm dev` | Start Bridge and Mobile together |
 | `pnpm dev:bridge` | Start only the Bridge |
 | `pnpm dev:mobile` | Start only the Vite dev server |
+| `pnpm dev:mobile:https` | Start Vite HTTPS on `0.0.0.0:5174` (requires `.certs/`) |
 | `pnpm typecheck` | TypeScript checks for all packages |
-| `pnpm test` | Protocol and Bridge unit tests |
+| `pnpm test` | Protocol, Bridge, and Mobile unit tests |
 | `pnpm build` | Build the Bridge and Mobile |
 | `pnpm lint` / `pnpm format` | Biome checks and formatting |
 | `pnpm smoke:acp` | Real ACP smoke test; requires `.env` and a local DSH build |
@@ -119,7 +139,7 @@ pnpm smoke:acp
 Current verified scope:
 
 - Protocol: 10 unit tests.
-- Bridge: 27 unit tests, including persistence, lease transitions, and WS auth.
+- Bridge: 65 unit tests, including persistence, lease transitions, WS auth, and STT handling.
 - Real DSH ACP smoke: initialize, list sessions, create a session, and close it.
 - Mobile: Playwright at 390×844 and 320×700 in Light and Dark themes, including onboarding, catalog, chat, settings, and the permission sheet.
 

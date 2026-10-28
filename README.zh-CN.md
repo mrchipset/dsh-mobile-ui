@@ -92,6 +92,25 @@ DSH_CWD=C:/path/to/workspace
 | `LEASE_GRACE_MS` | `10000` | 写权交接宽限期 |
 | `PERMISSION_TTL_MS` | `180000` | 未处理审批的自动取消时间 |
 | `LOG_LEVEL` | `info` | Pino 日志级别 |
+| `STT_ENABLED` | `false` | 启用 `POST /api/transcribe` 与 STT 就绪探测 |
+| `STT_BASE_URL` | `http://127.0.0.1:8000/v1` | FunASR OpenAI 兼容服务地址 |
+| `STT_MODEL` | `paraformer` | FunASR 模型别名；`sensevoice` 更快 |
+| `STT_API_KEY_ENV` | 未设置 | 可选 STT 密钥所在的环境变量名 |
+
+## 语音输入
+
+语音输入会在浏览器录制短音频并上传到 Bridge，再把 FunASR 转写结果插入草稿；发送仍需用户手动确认。
+
+- 配置 `STT_ENABLED=true`、`STT_BASE_URL=http://127.0.0.1:8000/v1`（同机）或 `http://192.168.71.5:8000/v1`（局域网 GPU 主机）、`STT_MODEL=paraformer`。`/health` 会通过 `/v1/models` 返回缓存后的就绪状态。
+- 手机需要 HTTPS。在仓库根目录执行：
+  ```bash
+  mkcert -install
+  mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 <LAN_IP> localhost 127.0.0.1
+  pnpm dev:mobile:https
+  ```
+- 打开 `https://<LAN_IP>:5174`。Vite 会把 `/api` 与 `/ws` 代理到 `127.0.0.1:8787` 的 Bridge。
+- 手机上安装 mkcert 根证书；iPhone 还需在“设置 → 通用 → 关于本机 → 证书信任设置”中开启完全信任，Android 则作为用户 CA 安装。
+- 直接使用 `http://<LAN_IP>` 时无法调用真实麦克风。请在专用网络放行 `5174`；仅当手机直连 Bridge 时才需要放行 `8787`。演示模式无需麦克风或 STT 服务。
 
 ## 脚本
 
@@ -100,8 +119,9 @@ DSH_CWD=C:/path/to/workspace
 | `pnpm dev` | 同时启动 Bridge 与 Mobile |
 | `pnpm dev:bridge` | 只启动 Bridge |
 | `pnpm dev:mobile` | 只启动 Vite dev server |
+| `pnpm dev:mobile:https` | 在 `0.0.0.0:5174` 启动 Vite HTTPS（需要 `.certs/`） |
 | `pnpm typecheck` | 全仓库 TypeScript 检查 |
-| `pnpm test` | Protocol 与 Bridge 单元测试 |
+| `pnpm test` | Protocol、Bridge 与 Mobile 单元测试 |
 | `pnpm build` | 构建 Bridge 与 Mobile |
 | `pnpm lint` / `pnpm format` | Biome 检查与格式化 |
 | `pnpm smoke:acp` | 真实 ACP 冒烟测试；需要 `.env` 和本地 DSH 构建 |
@@ -119,7 +139,7 @@ pnpm smoke:acp
 当前已验证范围：
 
 - Protocol：10 个单元测试。
-- Bridge：27 个单元测试，覆盖持久化、租约状态迁移与 WS 鉴权。
+- Bridge：65 个单元测试，覆盖持久化、租约状态迁移、WS 鉴权与 STT 处理。
 - 真实 DSH ACP 冒烟：initialize、列出会话、创建会话、关闭会话。
 - Mobile：Playwright 在 390×844 与 320×700 下验证 Light/Dark，包括 onboarding、会话目录、聊天、设置和审批 Sheet。
 

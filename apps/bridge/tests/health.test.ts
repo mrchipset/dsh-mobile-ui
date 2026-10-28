@@ -37,7 +37,8 @@ describe('health endpoint', () => {
       stt: {
         enabled: false,
         provider: 'funasr',
-        model: 'SenseVoiceSmall',
+        model: 'paraformer',
+        reachable: false,
       },
     })
 
@@ -48,13 +49,13 @@ describe('health endpoint', () => {
     lease.dispose()
   })
 
-  it('reports configured STT state without probing the service', async () => {
+  it('reports cached STT readiness when enabled', async () => {
     const config = loadConfig({
       BRIDGE_SECRET: 'correct-horse-battery',
       ACP_ENABLED: 'false',
       STT_ENABLED: 'true',
       STT_PROVIDER: 'funasr',
-      STT_MODEL: 'SenseVoiceSmall-int8',
+      STT_MODEL: 'paraformer-int8',
     } as NodeJS.ProcessEnv)
     opened = openDatabase({ ...config, dbPath: ':memory:' })
     const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
@@ -62,6 +63,7 @@ describe('health endpoint', () => {
       config,
       repo: opened.repo,
       lease,
+      sttReadiness: { reachable: async () => true },
       logger: createLogger('silent'),
     })
 
@@ -72,8 +74,72 @@ describe('health endpoint', () => {
       stt: {
         enabled: true,
         provider: 'funasr',
-        model: 'SenseVoiceSmall-int8',
+        model: 'paraformer-int8',
+        reachable: true,
       },
+    })
+
+    await app.close()
+    lease.dispose()
+  })
+
+  it('does not probe STT when disabled', async () => {
+    const config = loadConfig({
+      BRIDGE_SECRET: 'correct-horse-battery',
+      ACP_ENABLED: 'false',
+    } as NodeJS.ProcessEnv)
+    opened = openDatabase({ ...config, dbPath: ':memory:' })
+    const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
+    let calls = 0
+    const app = buildApp({
+      config,
+      repo: opened.repo,
+      lease,
+      sttReadiness: {
+        reachable: async () => {
+          calls += 1
+          return true
+        },
+      },
+      logger: createLogger('silent'),
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/health' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      stt: { enabled: false, reachable: false },
+    })
+    expect(calls).toBe(0)
+
+    await app.close()
+    lease.dispose()
+  })
+
+  it('keeps health healthy when the readiness probe fails', async () => {
+    const config = loadConfig({
+      BRIDGE_SECRET: 'correct-horse-battery',
+      ACP_ENABLED: 'false',
+      STT_ENABLED: 'true',
+    } as NodeJS.ProcessEnv)
+    opened = openDatabase({ ...config, dbPath: ':memory:' })
+    const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
+    const app = buildApp({
+      config,
+      repo: opened.repo,
+      lease,
+      sttReadiness: {
+        reachable: async () => {
+          throw new Error('probe failed')
+        },
+      },
+      logger: createLogger('silent'),
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/health' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      ok: true,
+      stt: { enabled: true, reachable: false },
     })
 
     await app.close()

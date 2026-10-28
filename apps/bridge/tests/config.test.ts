@@ -24,7 +24,7 @@ describe('loadConfig', () => {
     expect(config.sttEnabled).toBe(false)
     expect(config.sttProvider).toBe('funasr')
     expect(config.sttBaseUrl).toBe('http://127.0.0.1:8000/v1')
-    expect(config.sttModel).toBe('SenseVoiceSmall')
+    expect(config.sttModel).toBe('paraformer')
     expect(config.sttLanguage).toBe('zh')
     expect(config.sttTimeoutMs).toBe(60000)
     expect(config.sttMaxBytes).toBe(8388608)
@@ -39,7 +39,7 @@ describe('loadConfig', () => {
       STT_ENABLED: 'true',
       STT_PROVIDER: 'funasr',
       STT_BASE_URL: 'http://192.168.1.50:8000/v1',
-      STT_MODEL: 'SenseVoiceSmall-int8',
+      STT_MODEL: 'paraformer-int8',
       STT_LANGUAGE: 'auto',
       STT_TIMEOUT_MS: '120000',
       STT_MAX_BYTES: '1048576',
@@ -50,7 +50,7 @@ describe('loadConfig', () => {
 
     expect(config.sttEnabled).toBe(true)
     expect(config.sttBaseUrl).toBe('http://192.168.1.50:8000/v1')
-    expect(config.sttModel).toBe('SenseVoiceSmall-int8')
+    expect(config.sttModel).toBe('paraformer-int8')
     expect(config.sttLanguage).toBe('auto')
     expect(config.sttTimeoutMs).toBe(120000)
     expect(config.sttMaxBytes).toBe(1048576)

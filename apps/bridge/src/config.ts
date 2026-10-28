@@ -28,7 +28,7 @@ const envSchema = z.object({
   STT_ENABLED: booleanishSchema.default(false),
   STT_PROVIDER: z.string().min(1).default('funasr'),
   STT_BASE_URL: z.string().url().default('http://127.0.0.1:8000/v1'),
-  STT_MODEL: z.string().min(1).default('SenseVoiceSmall'),
+  STT_MODEL: z.string().min(1).default('paraformer'),
   STT_LANGUAGE: z.string().min(1).default('zh'),
   STT_TIMEOUT_MS: positiveIntSchema.default(60000),
   STT_MAX_BYTES: positiveIntSchema.default(8388608),

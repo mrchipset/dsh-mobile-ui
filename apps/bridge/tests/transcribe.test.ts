@@ -57,7 +57,7 @@ function fakeStt(overrides: Partial<SttTranscribeResult> = {}): SpeechToText {
         text: '你好',
         language: input.language ?? 'zh',
         provider: 'funasr',
-        model: 'SenseVoiceSmall',
+        model: 'paraformer',
         ...overrides,
       }
     },
@@ -109,7 +109,7 @@ describe('POST /api/transcribe', () => {
           text: '把支付回调改成异步处理',
           language: input.language ?? 'zh',
           provider: 'funasr',
-          model: 'SenseVoiceSmall',
+          model: 'paraformer',
         }
       },
     }
@@ -135,7 +135,7 @@ describe('POST /api/transcribe', () => {
         text: '把支付回调改成异步处理',
         language: 'zh',
         provider: 'funasr',
-        model: 'SenseVoiceSmall',
+        model: 'paraformer',
         durationMs: 1200,
       })
       expect(typeof body.latencyMs).toBe('number')
@@ -288,7 +288,7 @@ describe('POST /api/transcribe', () => {
           text: 'ok',
           language: 'zh',
           provider: 'funasr',
-          model: 'SenseVoiceSmall',
+          model: 'paraformer',
         }
       },
     }
@@ -366,7 +366,7 @@ describe('POST /api/transcribe', () => {
           text: 'ok',
           language: 'zh',
           provider: 'funasr',
-          model: 'SenseVoiceSmall',
+          model: 'paraformer',
         }
       },
     }
@@ -412,7 +412,7 @@ describe('POST /api/transcribe', () => {
             text: transcript,
             language: 'zh',
             provider: 'funasr',
-            model: 'SenseVoiceSmall',
+            model: 'paraformer',
           }
         }
         throw new SttError('stt_upstream_error', 'upstream failed', 503)

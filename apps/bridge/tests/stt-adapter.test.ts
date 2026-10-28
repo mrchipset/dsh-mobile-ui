@@ -15,7 +15,7 @@ function makeStt(overrides: Partial<OpenAICompatibleSttOptions> = {}): OpenAICom
   return new OpenAICompatibleStt({
     baseUrl: 'http://127.0.0.1:8000/v1/',
     provider: 'funasr',
-    model: 'SenseVoiceSmall',
+    model: 'paraformer',
     defaultLanguage: 'zh',
     timeoutMs: 1000,
     ...overrides,
@@ -49,7 +49,7 @@ describe('OpenAICompatibleStt', () => {
       text: '你好',
       language: 'zh',
       provider: 'funasr',
-      model: 'SenseVoiceSmall',
+      model: 'paraformer',
     })
 
     const { url, init } = firstFetchCall(fetchMock)
@@ -62,7 +62,7 @@ describe('OpenAICompatibleStt', () => {
 
     const form = init.body as FormData
     expect(form).toBeInstanceOf(FormData)
-    expect(form.get('model')).toBe('SenseVoiceSmall')
+    expect(form.get('model')).toBe('paraformer')
     expect(form.get('language')).toBe('zh')
     expect(form.get('response_format')).toBe('json')
     const file = form.get('file')

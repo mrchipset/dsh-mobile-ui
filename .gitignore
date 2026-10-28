@@ -17,6 +17,7 @@ data/
 Thumbs.db
 *.log
 .vite/
+.certs/
 .turbo/
 .playwright-mcp/
 .slim/deepwork/

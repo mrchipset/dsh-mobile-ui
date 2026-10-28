@@ -19,11 +19,11 @@ Non-goals for v1:
 ## 2. Confirmed constraints
 
 - Backend: FunASR, deployable on the same host (Docker) or a LAN GPU machine.
-- UX: press-and-hold to record; release to transcribe; fill the input box.
+- UX: touch press-and-hold to record, release to transcribe; mouse click and Space/Enter toggle; fill the input box.
 - Devices: Android and iPhone.
 - Network: LAN access from phones.
 - Recording limit: 60 seconds.
-- Model: SenseVoiceSmall default; model configurable.
+- Model: `paraformer` default (Chinese + punctuation); model configurable. `sensevoice` is a faster alternative.
 - Security: existing Bearer token remains; no new auth hardening in v1.
 
 ## 3. Critical browser constraint: secure context
@@ -37,12 +37,12 @@ Non-goals for v1:
 Ignoring production security does not remove this browser requirement. For Android + iPhone, use local HTTPS:
 
 1. `mkcert -install`
-2. `mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem <LAN_IP> localhost 127.0.0.1`
-3. Vite reads `.certs/` and serves `https://<LAN_IP>:5173`.
-4. Phone installs the mkcert root CA; iPhone also enables full trust.
+2. `mkcert -cert-file .certs/dev-cert.pem -key-file .certs/dev-key.pem 192.168.71.5 <LAN_IP> localhost 127.0.0.1`
+3. `pnpm dev:mobile:https` serves Vite on `https://<LAN_IP>:5174`.
+4. Install the mkcert root CA on the phone; iPhone also enables full trust (Settings → General → About → Certificate Trust Settings). Android installs it as a user CA.
 5. Vite proxies `/api` to `http://127.0.0.1:8787` and `/ws` to `ws://127.0.0.1:8787`.
 
-The Bridge remains HTTP and is reached only through the Vite proxy. `.certs/` must be git-ignored.
+The Bridge remains HTTP and is reached only through the Vite proxy. Plain `http://<LAN_IP>` disables real `getUserMedia`; only HTTPS or localhost enables the microphone. `.certs/` is git-ignored. Allow Vite `5174` (and Bridge `8787` if phones connect directly) through the Windows firewall on Private networks.
 
 Android-only alternative for quick testing: `adb reverse tcp:5173 tcp:5173` and `adb reverse tcp:8787 tcp:8787`, then open `http://localhost:5173`. This is not the chosen path because iPhone must work too.
 
@@ -92,7 +92,7 @@ Response:
   "text": "把支付回调改成异步处理",
   "language": "zh",
   "provider": "funasr",
-  "model": "SenseVoiceSmall",
+  "model": "paraformer",
   "durationMs": 8420,
   "latencyMs": 620
 }
@@ -100,15 +100,16 @@ Response:
 
 Rules:
 
-- Accept `audio/webm`, `audio/mp4`, `audio/wav`, `audio/ogg`.
+- Accept `audio/webm`, `audio/mp4`, `audio/wav`, `audio/ogg`, `audio/x-m4a`, and `audio/aac`; clients must send an explicit MIME.
+- Authenticate in a route-level `onRequest` hook, so 401 wins before the body is buffered or a 413 is decided.
 - Reject unsupported MIME with 415.
-- Reject oversized bodies with 413.
+- Reject oversized bodies with `413 { error: "audio_too_large", maxBytes }`.
 - Reject missing/invalid auth with 401.
-- Enforce 60 s maximum; use `ffprobe` when available and never trust only the client header.
+- Enforce the duration cap from `X-Audio-Duration-Ms`; server-side `ffprobe` enforcement is a follow-up.
 - Limit concurrent transcriptions (`STT_CONCURRENCY`, default 1) and return 429 when saturated.
-- Timeout with 504.
+- Timeout with 504; other upstream failures return 502.
 - Return 503 when STT is disabled.
-- Never log audio bytes, transcript text, full STT URLs, or keys. Log bytes, duration, latency, provider, and error code only.
+- Never log audio bytes, transcript text, full STT URLs, or keys. Log bytes, duration, latency, provider, error code, and numeric upstream status only.
 
 ### Health
 
@@ -120,13 +121,13 @@ Extend `/health`:
   "stt": {
     "enabled": true,
     "provider": "funasr",
-    "model": "SenseVoiceSmall",
+    "model": "paraformer",
     "reachable": true
   }
 }
 ```
 
-`reachable` is a cached probe; STT downtime must not fail the Bridge health check.
+`reachable` probes `${STT_BASE_URL}/models` with a ~2 s timeout and a ~30 s cache. STT downtime must not fail or hang the Bridge health check. When `STT_ENABLED=false`, `/health` consistently reports `reachable: false` and does not probe.
 
 ### STT adapter
 
@@ -146,7 +147,7 @@ interface SpeechToText {
 }
 ```
 
-Implement `OpenAICompatibleStt` with Node's built-in `fetch`, `FormData`, and `Blob`. It calls `${STT_BASE_URL}/audio/transcriptions` with `file`, `model`, `language`, and `response_format=json`.
+Implement `OpenAICompatibleStt` with Node's built-in `fetch`, `FormData`, and `Blob`. It calls `${STT_BASE_URL}/audio/transcriptions` with `file`, `model`, `language` (omitted when `auto`), and `response_format=json`; an upstream `language` field wins when present.
 
 ## 6. Bridge configuration
 
@@ -154,8 +155,8 @@ Implement `OpenAICompatibleStt` with Node's built-in `fetch`, `FormData`, and `B
 STT_ENABLED=true
 STT_PROVIDER=funasr
 STT_BASE_URL=http://127.0.0.1:8000/v1
-# STT_BASE_URL=http://192.168.1.50:8000/v1
-STT_MODEL=SenseVoiceSmall
+# STT_BASE_URL=http://192.168.71.5:8000/v1
+STT_MODEL=paraformer
 STT_LANGUAGE=zh
 STT_TIMEOUT_MS=60000
 STT_MAX_BYTES=8388608
@@ -176,8 +177,9 @@ type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
 
 ### Interaction
 
-- Press and hold the microphone button.
-- `pointerdown` starts recording; `pointerup`/`pointercancel` stops and uploads.
+- Touch/pen press-and-hold records; release uploads.
+- Mouse click toggles recording; Space/Enter on the focused mic also toggles.
+- `pointerdown` starts a hold for touch/pen; `pointerup`/`pointercancel` stops and uploads.
 - `contextmenu` is prevented; `touch-action: none`; pointer capture is used.
 - 60 s auto-stop; clips under 300 ms are treated as accidental.
 - Recording bar shows timer, input level, cancel, and stop.
@@ -232,12 +234,12 @@ STT_BASE_URL=http://127.0.0.1:8000/v1
 LAN GPU machine:
 
 ```env
-STT_BASE_URL=http://192.168.1.50:8000/v1
+STT_BASE_URL=http://192.168.71.5:8000/v1
 ```
 
-The Bridge must be able to reach the STT port; no CORS is involved because the Bridge is the HTTP client.
+The Bridge must be able to reach the STT port; no CORS is involved because the Bridge is the HTTP client. Readiness is checked through `/v1/models`.
 
-Preferred model: SenseVoiceSmall. If it cannot decode webm/mp4 directly, transcode to 16 kHz mono WAV inside the STT container with ffmpeg. Add attribution for FunASR model weights in the README/deploy notes.
+Preferred model: `paraformer` (Chinese + punctuation); `sensevoice` is a faster alternative. If FunASR cannot decode webm/mp4 directly, transcode to 16 kHz mono WAV inside the STT container with ffmpeg. Add attribution for FunASR model weights in the README/deploy notes.
 
 ## 9. Testing
 
@@ -246,8 +248,8 @@ Preferred model: SenseVoiceSmall. If it cannot decode webm/mp4 directly, transco
 - 401 without/with invalid token.
 - 200 with a fake STT adapter and a short WAV fixture.
 - 413 oversized, 415 unsupported MIME, 503 disabled, 504 timeout, 429 concurrency.
-- `/health` includes STT state.
-- Config tests for local and LAN base URLs.
+- `/health` includes STT state and cached `/models` reachability.
+- Config tests for local and LAN base URLs, and readiness tests for true/false, timeout, cache, and disabled state.
 - Adapter test for OpenAI-compatible request/response mapping.
 
 ### Mobile

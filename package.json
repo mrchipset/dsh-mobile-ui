@@ -13,6 +13,7 @@
     "dev": "concurrently -n bridge,mobile -c blue,magenta \"pnpm dev:bridge\" \"pnpm dev:mobile\"",
     "dev:bridge": "pnpm --filter @dsh-mobile/bridge dev",
     "dev:mobile": "pnpm --filter @dsh-mobile/mobile dev",
+    "dev:mobile:https": "pnpm --filter @dsh-mobile/mobile exec vite --port 5174 --host 0.0.0.0",
     "build": "pnpm -r build",
     "typecheck": "tsc -p packages/protocol/tsconfig.json --noEmit && tsc -p apps/bridge/tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit",
     "test": "vitest run",
