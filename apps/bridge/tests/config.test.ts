@@ -59,6 +59,15 @@ describe('loadConfig', () => {
     expect(config.sttApiKeyEnv).toBe('STT_API_KEY')
   })
 
+  it('rejects an invalid STT_BASE_URL', () => {
+    expect(() =>
+      loadConfig({
+        BRIDGE_SECRET: secret,
+        STT_BASE_URL: 'not-a-url',
+      } as NodeJS.ProcessEnv),
+    ).toThrow()
+  })
+
   it('uses DSH_PROFILE only when DSH_ARGS is absent', () => {
     const profileOnly = loadConfig({
       BRIDGE_SECRET: secret,

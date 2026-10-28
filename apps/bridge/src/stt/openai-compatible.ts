@@ -55,7 +55,7 @@ export class OpenAICompatibleStt implements SpeechToText {
 
   async transcribe(input: SttTranscribeInput): Promise<SttTranscribeResult> {
     const bytes = new Uint8Array(input.data)
-    const language = input.language ?? this.options.defaultLanguage
+    const requestedLanguage = input.language ?? this.options.defaultLanguage
     const form = new FormData()
     form.append(
       'file',
@@ -63,7 +63,7 @@ export class OpenAICompatibleStt implements SpeechToText {
       `audio.${extensionForMime(input.mimeType)}`,
     )
     form.append('model', this.options.model)
-    form.append('language', language)
+    if (requestedLanguage !== 'auto') form.append('language', requestedLanguage)
     form.append('response_format', 'json')
 
     const headers: Record<string, string> = {}
@@ -88,7 +88,11 @@ export class OpenAICompatibleStt implements SpeechToText {
     }
 
     if (!response.ok) {
-      throw new SttError('stt_upstream_error', `STT service returned HTTP ${response.status}`)
+      throw new SttError(
+        'stt_upstream_error',
+        `STT service returned HTTP ${response.status}`,
+        response.status,
+      )
     }
 
     let payload: unknown
@@ -101,17 +105,23 @@ export class OpenAICompatibleStt implements SpeechToText {
       throw new SttError('stt_upstream_error', 'STT service returned an invalid response')
     }
 
-    const text =
-      typeof payload === 'object' && payload !== null && 'text' in payload
-        ? (payload as { text?: unknown }).text
+    const record =
+      typeof payload === 'object' && payload !== null
+        ? (payload as { text?: unknown; language?: unknown })
         : undefined
+    const text = record?.text
     if (typeof text !== 'string' || text.trim().length === 0) {
       throw new SttError('stt_upstream_error', 'STT service returned no transcript')
     }
 
+    const upstreamLanguage =
+      typeof record?.language === 'string' && record.language.trim().length > 0
+        ? record.language
+        : undefined
+
     return {
       text: text.trim(),
-      language,
+      language: upstreamLanguage ?? requestedLanguage,
       provider: this.options.provider,
       model: this.options.model,
     }

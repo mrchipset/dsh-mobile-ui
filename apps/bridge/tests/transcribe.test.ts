@@ -4,7 +4,7 @@ import { buildApp } from '../src/app.js'
 import { loadConfig } from '../src/config.js'
 import { openDatabase } from '../src/db/index.js'
 import { LeaseManager } from '../src/lease/manager.js'
-import { createLogger } from '../src/logger.js'
+import { createLogger, type Logger } from '../src/logger.js'
 import {
   type SpeechToText,
   SttError,
@@ -20,7 +20,11 @@ interface Harness {
   close: () => Promise<void>
 }
 
-function makeHarness(env: Record<string, string>, stt?: SpeechToText): Harness {
+function makeHarness(
+  env: Record<string, string>,
+  stt?: SpeechToText,
+  logger: Logger = createLogger('silent'),
+): Harness {
   const config = loadConfig({
     BRIDGE_SECRET: secret,
     ACP_ENABLED: 'false',
@@ -33,7 +37,7 @@ function makeHarness(env: Record<string, string>, stt?: SpeechToText): Harness {
     repo: opened.repo,
     lease,
     ...(stt === undefined ? {} : { stt }),
-    logger: createLogger('silent'),
+    logger,
   })
 
   return {
@@ -137,12 +141,29 @@ describe('POST /api/transcribe', () => {
       expect(typeof body.latencyMs).toBe('number')
       expect(seen[0]?.mimeType).toBe('audio/webm')
       expect(seen[0]?.durationMs).toBe(1200)
+      expect(seen[0] === undefined ? undefined : Buffer.from(seen[0].data)).toEqual(audio)
     } finally {
       await harness.close()
     }
   })
 
-  it('returns 413 for oversized audio', async () => {
+  it('returns 401 before rejecting an oversized unauthenticated body', async () => {
+    const harness = makeHarness({ STT_ENABLED: 'true', STT_MAX_BYTES: '4' }, fakeStt())
+    try {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: { 'content-type': 'audio/webm' },
+        payload: audio,
+      })
+      expect(response.statusCode).toBe(401)
+      expect(response.json()).toEqual({ error: 'unauthorized' })
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it('returns the audio_too_large envelope for oversized audio', async () => {
     const harness = makeHarness({ STT_ENABLED: 'true', STT_MAX_BYTES: '4' }, fakeStt())
     try {
       const response = await harness.app.inject({
@@ -152,6 +173,7 @@ describe('POST /api/transcribe', () => {
         payload: audio,
       })
       expect(response.statusCode).toBe(413)
+      expect(response.json()).toEqual({ error: 'audio_too_large', maxBytes: 4 })
     } finally {
       await harness.close()
     }
@@ -170,7 +192,6 @@ describe('POST /api/transcribe', () => {
         payload: audio,
       })
       expect(response.statusCode).toBe(415)
-      expect(response.json()).toEqual({ error: 'unsupported_audio' })
     } finally {
       await harness.close()
     }
@@ -296,5 +317,142 @@ describe('POST /api/transcribe', () => {
       expect(firstResponse.statusCode).toBe(200)
       await harness.close()
     }
+  })
+
+  it('returns 400 for an empty body', async () => {
+    const harness = makeHarness({ STT_ENABLED: 'true' }, fakeStt())
+    try {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: audioHeaders(),
+        payload: Buffer.alloc(0),
+      })
+      expect(response.statusCode).toBe(400)
+      expect(response.json()).toEqual({ error: 'audio_empty' })
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it.each(['audio/mp4', 'audio/x-m4a', 'audio/aac'])(
+    'accepts the iOS MIME type %s',
+    async (mimeType) => {
+      const harness = makeHarness({ STT_ENABLED: 'true' }, fakeStt())
+      try {
+        const response = await harness.app.inject({
+          method: 'POST',
+          url: '/api/transcribe',
+          headers: {
+            authorization: `Bearer ${secret}`,
+            'content-type': mimeType,
+          },
+          payload: audio,
+        })
+        expect(response.statusCode).toBe(200)
+      } finally {
+        await harness.close()
+      }
+    },
+  )
+
+  it('releases the concurrency slot after a timeout', async () => {
+    let calls = 0
+    const flaky: SpeechToText = {
+      async transcribe() {
+        calls += 1
+        if (calls === 1) throw new SttError('stt_timeout', 'timeout')
+        return {
+          text: 'ok',
+          language: 'zh',
+          provider: 'funasr',
+          model: 'SenseVoiceSmall',
+        }
+      },
+    }
+    const harness = makeHarness({ STT_ENABLED: 'true', STT_CONCURRENCY: '1' }, flaky)
+    try {
+      const first = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: audioHeaders(),
+        payload: audio,
+      })
+      expect(first.statusCode).toBe(504)
+
+      const second = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: audioHeaders(),
+        payload: audio,
+      })
+      expect(second.statusCode).toBe(200)
+    } finally {
+      await harness.close()
+    }
+  })
+
+  it('logs only safe failure metadata', async () => {
+    const logs: string[] = []
+    const captureLogger = {
+      info: (...args: unknown[]) => logs.push(JSON.stringify(args[0])),
+      warn: (...args: unknown[]) => logs.push(JSON.stringify(args[0])),
+      debug: () => {},
+      error: () => {},
+    } as unknown as Logger
+
+    let calls = 0
+    const transcript = 'TRANSCRIPT-UNIQUE'
+    const audioMarker = Buffer.from('AUDIO-UNIQUE')
+    const stt: SpeechToText = {
+      async transcribe() {
+        calls += 1
+        if (calls === 1) {
+          return {
+            text: transcript,
+            language: 'zh',
+            provider: 'funasr',
+            model: 'SenseVoiceSmall',
+          }
+        }
+        throw new SttError('stt_upstream_error', 'upstream failed', 503)
+      },
+    }
+
+    const harness = makeHarness(
+      {
+        STT_ENABLED: 'true',
+        STT_BASE_URL: 'http://stt.internal:9999/v1',
+        STT_API_KEY_ENV: 'STT_TEST_KEY',
+      },
+      stt,
+      captureLogger,
+    )
+    try {
+      const success = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: audioHeaders(),
+        payload: audioMarker,
+      })
+      expect(success.statusCode).toBe(200)
+
+      const failure = await harness.app.inject({
+        method: 'POST',
+        url: '/api/transcribe',
+        headers: audioHeaders(),
+        payload: audioMarker,
+      })
+      expect(failure.statusCode).toBe(502)
+    } finally {
+      await harness.close()
+    }
+
+    const joined = logs.join('\n')
+    expect(joined).toContain('"upstreamStatus":503')
+    expect(joined).not.toContain(transcript)
+    expect(joined).not.toContain('AUDIO-UNIQUE')
+    expect(joined).not.toContain('http://stt.internal:9999/v1')
+    expect(joined).not.toContain('super-secret-key')
   })
 })

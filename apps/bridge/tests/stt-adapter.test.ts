@@ -95,6 +95,32 @@ describe('OpenAICompatibleStt', () => {
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
+  it('omits language for auto and prefers the upstream language', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ text: 'ok', language: 'zh' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await makeStt({ defaultLanguage: 'auto' }).transcribe({
+      data: audio,
+      mimeType: 'audio/webm',
+    })
+    expect(result.language).toBe('zh')
+
+    const { init } = firstFetchCall(fetchMock)
+    expect((init.body as FormData).has('language')).toBe(false)
+  })
+
+  it('prefers an upstream language over the requested language', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ text: 'ok', language: 'en' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await makeStt().transcribe({
+      data: audio,
+      mimeType: 'audio/webm',
+      language: 'zh',
+    })
+    expect(result.language).toBe('en')
+  })
+
   it('maps timeouts to stt_timeout', async () => {
     const timeout = Object.assign(new Error('timed out'), { name: 'TimeoutError' })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout))
@@ -110,6 +136,17 @@ describe('OpenAICompatibleStt', () => {
     await expect(
       makeStt().transcribe({ data: audio, mimeType: 'audio/webm' }),
     ).rejects.toMatchObject({ code: 'stt_upstream_error' })
+  })
+
+  it('records the upstream status for non-OK responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 503 })))
+
+    await expect(
+      makeStt().transcribe({ data: audio, mimeType: 'audio/webm' }),
+    ).rejects.toMatchObject({
+      code: 'stt_upstream_error',
+      upstreamStatus: 503,
+    })
   })
 
   it.each([

@@ -21,10 +21,12 @@ export type SttErrorCode = 'stt_timeout' | 'stt_upstream_error'
 
 export class SttError extends Error {
   readonly code: SttErrorCode
+  readonly upstreamStatus?: number
 
-  constructor(code: SttErrorCode, message: string) {
+  constructor(code: SttErrorCode, message: string, upstreamStatus?: number) {
     super(message)
     this.name = 'SttError'
     this.code = code
+    this.upstreamStatus = upstreamStatus
   }
 }

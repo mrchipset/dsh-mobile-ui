@@ -44,6 +44,16 @@ async function main(): Promise<void> {
   const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
 
   const sttApiKey = config.sttApiKeyEnv === undefined ? undefined : process.env[config.sttApiKeyEnv]
+  if (
+    config.sttEnabled &&
+    config.sttApiKeyEnv !== undefined &&
+    (sttApiKey === undefined || sttApiKey.trim().length === 0)
+  ) {
+    log.warn(
+      { envVar: config.sttApiKeyEnv },
+      'STT API key env var is unset or empty; STT requests will be unauthenticated',
+    )
+  }
   const stt = config.sttEnabled
     ? new OpenAICompatibleStt({
         baseUrl: config.sttBaseUrl,
