@@ -115,6 +115,17 @@ export function ChatScreen({ sessionId }: { sessionId: string }) {
     return () => cancelAnimationFrame(frame)
   }, [scrollKey, scrollToBottom])
 
+  useEffect(() => {
+    const element = scrollRef.current
+    if (element === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (!stickRef.current) return
+      requestAnimationFrame(() => scrollToBottom(false))
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [scrollToBottom])
+
   const handleScroll = () => {
     const element = scrollRef.current
     if (element === null) return
