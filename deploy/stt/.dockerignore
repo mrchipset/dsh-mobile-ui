@@ -1,0 +1,5 @@
+models/
+.env
+.env.*
+!.env.example
+*.log

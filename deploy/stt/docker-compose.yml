@@ -1,0 +1,55 @@
+# FunASR OpenAI-compatible API, CPU-first.
+#
+#   cd deploy/stt
+#   docker compose up -d --build
+#
+# The service has no authentication. The default publication binds loopback
+# only. See README.md before exposing it on the LAN.
+
+services:
+  stt:
+    build:
+      context: .
+      args:
+        FUNASR_COMMIT: ${FUNASR_COMMIT:-d91d961e37a005837b1523bcc6b09f087877be54}
+    image: funasr-openai-api:cpu-2026-10
+    restart: unless-stopped
+    # CPU default. Set FUNASR_DEVICE=cuda and use a CUDA-capable image
+    # (CUDA torch wheels + NVIDIA Container Toolkit) for a GPU host.
+    ports:
+      # Windows Docker Desktop / same host: http://127.0.0.1:8000
+      # LAN GPU host: FUNASR_HOST_PORT=0.0.0.0:8000 (trusted networks only).
+      - "${FUNASR_HOST_PORT:-127.0.0.1:8000}:8000"
+    environment:
+      FUNASR_DEVICE: cpu
+      FUNASR_MODEL: paraformer
+      FUNASR_PORT: "8000"
+    volumes:
+      # Persist ModelScope/Hugging Face downloads across container rebuilds.
+      # On Windows this is a normal Docker Desktop bind mount.
+      - ./models:/root/.cache
+    shm_size: "2gb"
+    healthcheck:
+      # Cold start downloads model weights, so start_period is deliberately
+      # long (15 min). /health only proves the process is up; the Bridge treats
+      # GET /v1/models as the real readiness gate.
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=3).read()"',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+
+# GPU host sketch (uncomment after building a CUDA image and installing the
+# NVIDIA Container Toolkit). Keep the port publication loopback or LAN-scoped.
+#
+#    deploy:
+#      resources:
+#        reservations:
+#          devices:
+#            - driver: nvidia
+#              count: all
+#              capabilities: [gpu]

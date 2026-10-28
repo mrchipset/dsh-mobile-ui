@@ -1,0 +1,5 @@
+# FunASR/ModelScope model cache bind mount (large, machine-specific).
+models/
+
+# Local compose overrides.
+.env
