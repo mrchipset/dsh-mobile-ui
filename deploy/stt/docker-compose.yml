@@ -31,8 +31,8 @@ services:
     shm_size: "2gb"
     healthcheck:
       # Cold start downloads model weights, so start_period is deliberately
-      # long (15 min). /health only proves the process is up; the Bridge treats
-      # GET /v1/models as the real readiness gate.
+      # long (15 min). /health proves the process is up; GET /v1/models shows
+      # the server and pre-loaded alias are up, not per-model readiness.
       test:
         [
           "CMD-SHELL",

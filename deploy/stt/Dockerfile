@@ -15,12 +15,15 @@ ARG PYTHON_IMAGE=python:3.10-slim-bookworm
 FROM ${PYTHON_IMAGE}
 
 ARG FUNASR_COMMIT=d91d961e37a005837b1523bcc6b09f087877be54
+# CPU-only torch/torchaudio wheels, pinned to a version available for
+# python:3.10 (cp310). Bump both together; torchaudio must match torch.
+ARG TORCH_VERSION=2.6.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    FUNASR_MODEL=sensevoice \
+    FUNASR_MODEL=paraformer \
     FUNASR_DEVICE=cpu \
     FUNASR_PORT=8000 \
     MODELSCOPE_CACHE=/root/.cache/modelscope \
@@ -43,10 +46,15 @@ RUN git clone --filter=blob:none --no-checkout \
     && git -C /opt/FunASR checkout --detach "${FUNASR_COMMIT}" \
     && test "$(git -C /opt/FunASR rev-parse HEAD)" = "${FUNASR_COMMIT}"
 
-# Install FunASR from the pinned checkout (CPU torch wheels) plus the example
-# server dependencies. This is the heavy layer; Docker caches it across builds.
+# CPU torch/torchaudio must be installed before FunASR. Without them,
+# `import funasr` fails in server.py and the container exits before uvicorn
+# ever binds :8000 (the healthcheck then fails forever). Installing from the
+# PyTorch CPU index avoids pulling the much larger CUDA wheels from PyPI.
 WORKDIR /opt/FunASR
 RUN python -m pip install --upgrade pip \
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu \
+        "torch==${TORCH_VERSION}" \
+        "torchaudio==${TORCH_VERSION}" \
     && python -m pip install -e . \
     && python -m pip install \
         fastapi \
@@ -59,11 +67,12 @@ EXPOSE 8000
 
 # /health answers once the server is listening. The server only starts listening
 # after the startup model pre-load, so a cold model download is covered by the
-# long start_period in docker-compose.yml. /v1/models is the readiness gate the
-# Bridge probes; see README "Health and readiness".
+# long start_period in docker-compose.yml. /v1/models shows the server and
+# pre-loaded alias are up, not per-model readiness; see README
+# "Health and readiness".
 HEALTHCHECK --interval=30s --timeout=5s --start-period=900s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.getenv('FUNASR_PORT', '8000'), timeout=3).read()" || exit 1
 
 # The server has no authentication of its own. Keep the published port on
 # loopback (compose default) unless the network is trusted.
-CMD ["sh", "-c", "python server.py --host 0.0.0.0 --port ${FUNASR_PORT:-8000} --device ${FUNASR_DEVICE:-cpu} --model ${FUNASR_MODEL:-sensevoice}"]
+CMD ["sh", "-c", "python server.py --host 0.0.0.0 --port ${FUNASR_PORT:-8000} --device ${FUNASR_DEVICE:-cpu} --model ${FUNASR_MODEL:-paraformer}"]

@@ -18,8 +18,9 @@ needs `STT_BASE_URL` and `STT_MODEL`.
 
 ## Quick start (CPU, same host)
 
-Prerequisites: Docker Engine/Desktop with Compose v2. First start downloads
-model weights (hundreds of MB), so allow several minutes.
+Prerequisites: Docker Engine/Desktop with Compose v2. No image is published;
+the first `docker compose up --build` installs the pinned CPU torch layer and
+downloads model weights (hundreds of MB), so allow several minutes.
 
 ```bash
 cd deploy/stt
@@ -69,13 +70,13 @@ or the token. See `scripts/smoke-stt.ts --help`.
 Aliases are defined by the pinned `examples/openai_api/server.py`. Use the same
 alias in the Bridge's `STT_MODEL`.
 
-| Alias                     | Checkpoint                                              | Notes                                                                                         |
-| ------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `paraformer`              | `paraformer-zh` + FSMN-VAD + CT-Transformer punctuation | Default. Chinese (and Chinese/English mix), punctuation restored. Best for Chinese dictation. |
-| `sensevoice`              | `iic/SenseVoiceSmall` + FSMN-VAD                        | Faster. Multilingual (zh/yue/en/ja/ko). No separate punctuation component; special `<         | ... | >` tags are stripped. |
-| `paraformer-en`           | `paraformer-en` + FSMN-VAD                              | English-only alias; no punctuation component.                                                 |
-| `fun-asr-nano`            | `FunAudioLLM/Fun-ASR-Nano-2512`                         | Larger, Hugging Face hub, trust-remote-code. Not the v1 default.                              |
-| `moss-transcribe-diarize` | OpenMOSS MOSS-Transcribe-Diarize                        | Diarization adapter with its own model licence and dependencies; not the v1 default.          |
+| Alias                     | Checkpoint                                              | Notes                                                                                                                   |
+| ------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `paraformer`              | `paraformer-zh` + FSMN-VAD + CT-Transformer punctuation | Default. Chinese (and Chinese/English mix), punctuation restored. Best for Chinese dictation.                           |
+| `sensevoice`              | `iic/SenseVoiceSmall` + FSMN-VAD                        | Faster. Multilingual (zh/yue/en/ja/ko). No separate punctuation component; special model tags are stripped from output. |
+| `paraformer-en`           | `paraformer-en` + FSMN-VAD                              | English-only alias; no punctuation component.                                                                           |
+| `fun-asr-nano`            | `FunAudioLLM/Fun-ASR-Nano-2512`                         | Larger, Hugging Face hub, trust-remote-code. Not the v1 default.                                                        |
+| `moss-transcribe-diarize` | OpenMOSS MOSS-Transcribe-Diarize                        | Diarization adapter with its own model licence and dependencies; not the v1 default.                                    |
 
 `FUNASR_MODEL` in `docker-compose.yml` is pre-loaded at container startup. A
 request for a different alias loads it lazily (and downloads it if missing), so
@@ -96,16 +97,16 @@ directory is git-ignored.
 
 ## Health and readiness
 
-| Endpoint         | Meaning                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| `GET /health`    | Process is listening. Returns `device`, `models_loaded`, `models_available`.                               |
-| `GET /v1/models` | Registered aliases, each with `ready` (loaded) or not. This is the true readiness gate used by the Bridge. |
+| Endpoint         | Meaning                                                                                                                                                                             |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`    | Process is listening. Returns `device`, `models_loaded`, `models_available`.                                                                                                        |
+| `GET /v1/models` | Server is up and returns aliases with a per-model `ready` flag. Confirms the server and pre-loaded alias are up; it does not prove a different requested alias is loaded or usable. |
 
 The server pre-loads `FUNASR_MODEL` **before** starting uvicorn, so `/health`
 does not answer until the initial model is ready. The Compose healthcheck uses
-`/health` with a 15-minute `start_period` to absorb a cold download. The Bridge's
-STT reachability probe should target `/v1/models`; a 200 from `/health` alone
-does not prove the requested model alias is loaded.
+`/health` with a 15-minute `start_period` to absorb a cold download. A 200 from
+`/v1/models` is a server/pre-loaded-alias liveness signal, not per-model
+readiness; only a real transcription request proves the requested alias works.
 
 ## Network layout and LAN GPU
 
@@ -137,7 +138,9 @@ The shipped Dockerfile is CPU-only. For NVIDIA:
 1. Install the NVIDIA driver and NVIDIA Container Toolkit on the host.
 2. Build a CUDA-capable image (CUDA PyTorch/torchaudio wheels, e.g. a
    `nvidia/cuda` or `pytorch/pytorch:*-cuda*` base instead of the slim Python
-   base). `funasr` must see the GPU inside the container.
+   base). The Dockerfile pins **CPU** torch/torchaudio, so replace that install
+   step with matching CUDA wheels; `funasr` must see the GPU inside the
+   container.
 3. Set `FUNASR_DEVICE=cuda` in `docker-compose.yml`.
 4. Uncomment the `deploy.resources.reservations.devices` block at the bottom of
    `docker-compose.yml` and run `docker compose up -d`.
@@ -211,17 +214,31 @@ after the container reports healthy.
 
 ## Reproducibility and known limits
 
-Pinned: the FunASR source commit and the Python base image tag. Not pinned:
+Pinned: the FunASR source commit, the Python base image tag, and CPU
+torch/torchaudio (`ARG TORCH_VERSION`, default `2.6.0`). Not pinned:
 
-- PyPI dependency and CUDA/PyTorch wheel versions (resolved at build time)
+- the rest of the Python dependencies (`funasr` transitive deps,
+  fastapi/uvicorn/python-multipart) resolved from PyPI at build time
 - the base image digest (follow-up: pin `python:3.10-slim-bookworm@sha256:...`)
 - model weight revisions (follow-up: vendor or pin them in the cache)
 - the upstream example server's API surface; `/v1/models` and the alias set can
   change between commits
 
+CPU torch/torchaudio are mandatory, not optional: FunASR imports `torch` while
+loading the model, so without them `server.py` raises before uvicorn binds :8000,
+the container exits, and the healthcheck never passes. The `2.6.0` cp310 CPU
+wheels were confirmed present on the PyTorch index, but this repository has not
+built the image yet.
+
 The upstream Dockerfile is not fully reproducible (it installs unpinned `funasr`
 and copies only `server.py`). This Dockerfile improves on that by checking out
-the reviewed commit, but it is still not a bit-for-bit reproducible build. Build
-it once, tag/push it privately, and pin that image for production.
+the reviewed commit and pinning torch, but it is still not a bit-for-bit
+reproducible build. A real `docker compose build` + `up`, a `/v1/models` check,
+and at least one transcription are still required before calling the deployment
+verified; `docker compose config` only validates syntax. Build it once, tag/push
+it privately, and pin that image for production.
+
+To try a different torch release, build with
+`--build-arg TORCH_VERSION=<version>` (torchaudio must have the same version).
 
 [upstream]: https://github.com/modelscope/FunASR/tree/d91d961e37a005837b1523bcc6b09f087877be54/examples/openai_api
