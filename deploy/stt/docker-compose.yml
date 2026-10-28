@@ -11,6 +11,14 @@ services:
     build:
       context: .
       args:
+        # All build inputs are overridable via deploy/stt/.env. Defaults are
+        # network-safe for this host: locally cached python 3.12, Tsinghua
+        # PyPI, official torch CPU index, GitHub source.
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
+        FUNASR_REPO: ${FUNASR_REPO:-https://github.com/modelscope/FunASR.git}
         FUNASR_COMMIT: ${FUNASR_COMMIT:-d91d961e37a005837b1523bcc6b09f087877be54}
     image: funasr-openai-api:cpu-2026-10
     restart: unless-stopped

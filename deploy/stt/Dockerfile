@@ -9,14 +9,25 @@
 # Python dependencies and model weights are still resolved from PyPI/ModelScope
 # at build/run time; see README "Reproducibility".
 
-# A slim Debian base keeps the CPU image small. The tag is pinned for now; pin a
-# digest (python:3.10-slim-bookworm@sha256:...) as a follow-up.
-ARG PYTHON_IMAGE=python:3.10-slim-bookworm
+# A slim Debian base keeps the CPU image small. The default tag is the locally
+# cached `python:3.12-slim` (linux/amd64) to avoid another Docker Hub pull: on
+# this host Docker Hub token auth/IPv6 has failed. On another machine Docker
+# will pull this tag from Docker Hub; override PYTHON_IMAGE with a working
+# mirror if that fails. 3.12 vs the original 3.10 is a documented tradeoff; the
+# pinned torch 2.6.0 CPU wheels exist for cp312. Pin a digest as a follow-up.
+ARG PYTHON_IMAGE=python:3.12-slim
 FROM ${PYTHON_IMAGE}
 
 ARG FUNASR_COMMIT=d91d961e37a005837b1523bcc6b09f087877be54
+# GitHub is reachable here; the Gitee mirror is a documented override.
+ARG FUNASR_REPO=https://github.com/modelscope/FunASR.git
+# Tsinghua is fast/reachable here. Use https://pypi.org/simple to bypass it.
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# Official CPU wheels work. Domestic alternative that also has 2.6.0 cp312:
+# https://mirror.sjtu.edu.cn/pytorch-wheels/cpu
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 # CPU-only torch/torchaudio wheels, pinned to a version available for
-# python:3.10 (cp310). Bump both together; torchaudio must match torch.
+# python:3.12 (cp312). Bump both together; torchaudio must match torch.
 ARG TORCH_VERSION=2.6.0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -41,8 +52,9 @@ RUN apt-get update \
 
 # Blobless clone keeps the checkout small while still allowing a detached
 # checkout of the reviewed commit. Git's lazy blob fetch happens on checkout.
+# Servers without partial-clone support fall back to a full clone.
 RUN git clone --filter=blob:none --no-checkout \
-        https://github.com/modelscope/FunASR.git /opt/FunASR \
+        "${FUNASR_REPO}" /opt/FunASR \
     && git -C /opt/FunASR checkout --detach "${FUNASR_COMMIT}" \
     && test "$(git -C /opt/FunASR rev-parse HEAD)" = "${FUNASR_COMMIT}"
 
@@ -51,12 +63,12 @@ RUN git clone --filter=blob:none --no-checkout \
 # ever binds :8000 (the healthcheck then fails forever). Installing from the
 # PyTorch CPU index avoids pulling the much larger CUDA wheels from PyPI.
 WORKDIR /opt/FunASR
-RUN python -m pip install --upgrade pip \
-    && python -m pip install --index-url https://download.pytorch.org/whl/cpu \
+RUN python -m pip install --index-url "${PIP_INDEX_URL}" --upgrade pip \
+    && python -m pip install --index-url "${TORCH_INDEX_URL}" \
         "torch==${TORCH_VERSION}" \
         "torchaudio==${TORCH_VERSION}" \
-    && python -m pip install -e . \
-    && python -m pip install \
+    && python -m pip install --index-url "${PIP_INDEX_URL}" -e . \
+    && python -m pip install --index-url "${PIP_INDEX_URL}" \
         fastapi \
         "uvicorn[standard]" \
         python-multipart

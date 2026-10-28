@@ -54,6 +54,59 @@ docker compose down
 docker compose build --no-cache stt   # after changing the pinned commit
 ```
 
+### Build inputs and domestic mirrors
+
+All build inputs are Compose build args with defaults in `docker-compose.yml`.
+Override them in `deploy/stt/.env` (see `.env.example`) or on the command line:
+
+| Arg               | Default (this host)                         | Domestic / fallback                                                       |
+| ----------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| `PYTHON_IMAGE`    | `python:3.12-slim` (already cached locally) | `docker.m.daocloud.io/library/python:3.12-slim` (or `docker.1ms.run/...`) |
+| `PIP_INDEX_URL`   | `https://pypi.tuna.tsinghua.edu.cn/simple`  | `https://pypi.org/simple`, `https://mirrors.aliyun.com/pypi/simple/`      |
+| `TORCH_INDEX_URL` | `https://download.pytorch.org/whl/cpu`      | `https://mirror.sjtu.edu.cn/pytorch-wheels/cpu`                           |
+| `TORCH_VERSION`   | `2.6.0`                                     | keep torch/torchaudio identical                                           |
+| `FUNASR_REPO`     | `https://github.com/modelscope/FunASR.git`  | `https://gitee.com/mirrors/FunASR.git`                                    |
+| `FUNASR_COMMIT`   | `d91d961e...`                               | keep the reviewed commit                                                  |
+
+The defaults were chosen after short reachability probes, not a build: the local
+`python:3.12-slim` image is present (linux/amd64), the Tsinghua PyPI index
+returned 200, the official and SJTU torch indexes returned 200 and both list the
+`2.6.0` cp312 CPU wheels, and `git ls-remote` succeeded for GitHub and Gitee
+(the pinned commit exists on the Gitee mirror). Docker Hub mirror manifests timed
+out from this host, which is why the base image defaults to the local tag.
+
+Example override for a machine without the local base image:
+
+```bash
+cd deploy/stt
+PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim \
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+docker compose build
+```
+
+`PYTHON_IMAGE` is the only image pulled from a registry; the PyPI/torch/repo
+URLs only affect downloads inside the build. The base is 3.12 because that is
+what is cached locally; the upstream example originally used 3.10. FunASR
+declares `python>=3.7` and torch 2.6.0 cp312 wheels exist, but the 3.12
+combination has not been built here. If a dependency rejects 3.12, set
+`PYTHON_IMAGE=python:3.10-slim-bookworm` and pull it through a working mirror.
+
+### Docker Hub token auth / IPv6 failures
+
+A build that fails with `failed to fetch oauth token ... auth.docker.io` cannot
+reach Docker Hub (expired login, proxy, or broken IPv6). Workarounds, in order:
+
+1. Use the locally cached base image: `docker images python:3.12-slim`. The
+   Compose default already matches it, so `FROM` should not hit the network.
+2. Pull through a mirror and re-tag:
+   `docker pull docker.m.daocloud.io/library/python:3.12-slim` then
+   `docker tag docker.m.daocloud.io/library/python:3.12-slim python:3.12-slim`.
+3. `docker login docker.io` with a valid account/token.
+4. In Docker Desktop, disable IPv6 (Settings → Docker Engine: `"ipv6": false`)
+   or remove the broken DNS/proxy entry, then restart Docker.
+5. `docker manifest inspect` is only a probe and still uses the registry; a
+   timeout there does not mean the local image is broken.
+
 ### End-to-end through the Bridge
 
 With the Bridge running and `BRIDGE_SECRET` set:
@@ -214,29 +267,32 @@ after the container reports healthy.
 
 ## Reproducibility and known limits
 
-Pinned: the FunASR source commit, the Python base image tag, and CPU
-torch/torchaudio (`ARG TORCH_VERSION`, default `2.6.0`). Not pinned:
+Pinned: the FunASR source commit, the Python base image tag (`python:3.12-slim`,
+not a digest), and CPU torch/torchaudio (`ARG TORCH_VERSION`, default `2.6.0`).
+The source and package indexes are configurable (see "Build inputs"). Not pinned:
 
 - the rest of the Python dependencies (`funasr` transitive deps,
-  fastapi/uvicorn/python-multipart) resolved from PyPI at build time
-- the base image digest (follow-up: pin `python:3.10-slim-bookworm@sha256:...`)
+  fastapi/uvicorn/python-multipart) resolved from `PIP_INDEX_URL` at build time
+- the base image digest (follow-up: pin
+  `python:3.12-slim@sha256:...`; mirrors may serve a different digest)
 - model weight revisions (follow-up: vendor or pin them in the cache)
 - the upstream example server's API surface; `/v1/models` and the alias set can
   change between commits
 
 CPU torch/torchaudio are mandatory, not optional: FunASR imports `torch` while
 loading the model, so without them `server.py` raises before uvicorn binds :8000,
-the container exits, and the healthcheck never passes. The `2.6.0` cp310 CPU
-wheels were confirmed present on the PyTorch index, but this repository has not
-built the image yet.
+the container exits, and the healthcheck never passes. The `2.6.0` cp312 CPU
+wheels were confirmed on the official and SJTU indexes, but this repository has
+not built the image yet.
 
 The upstream Dockerfile is not fully reproducible (it installs unpinned `funasr`
 and copies only `server.py`). This Dockerfile improves on that by checking out
 the reviewed commit and pinning torch, but it is still not a bit-for-bit
 reproducible build. A real `docker compose build` + `up`, a `/v1/models` check,
 and at least one transcription are still required before calling the deployment
-verified; `docker compose config` only validates syntax. Build it once, tag/push
-it privately, and pin that image for production.
+verified; `docker compose config` and mirror reachability probes only validate
+syntax/networking. Build it once, tag/push it privately, and pin that image for
+production.
 
 To try a different torch release, build with
 `--build-arg TORCH_VERSION=<version>` (torchaudio must have the same version).
