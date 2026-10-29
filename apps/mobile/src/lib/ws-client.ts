@@ -63,6 +63,26 @@ export class BridgeClient {
   }
 
   connect(token: string, deviceId: string): void {
+    // An explicit connect/reconnect must never reuse a stale CONNECTING/OPEN
+    // socket that never completed auth. Tear it down, invalidate its events,
+    // then open a fresh socket with the current credentials.
+    this.clearReconnect()
+    this.wanted = false
+    this.generation += 1
+    const previous = this.socket
+    this.socket = null
+    this.ready = false
+    if (previous !== null) {
+      previous.onopen = null
+      previous.onmessage = null
+      previous.onclose = null
+      previous.onerror = null
+      try {
+        previous.close(1000, 'client reconnect')
+      } catch {
+        // Already closed.
+      }
+    }
     this.token = token
     this.deviceId = deviceId
     this.wanted = true
@@ -224,7 +244,12 @@ export class BridgeClient {
 
   private readonly handleOnline = (): void => {
     if (!this.wanted || this.token.length === 0) return
-    if (this.socket !== null && this.socket.readyState <= WebSocket.OPEN) return
+    if (this.socket !== null && this.socket.readyState <= WebSocket.OPEN) {
+      // A socket can be OPEN while auth never completed. Force a clean reopen
+      // instead of waiting forever for a `ready` that will not arrive.
+      if (!this.ready) this.connect(this.token, this.deviceId)
+      return
+    }
     this.attempts = 0
     this.openSocket()
   }
