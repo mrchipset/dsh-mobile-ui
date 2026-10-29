@@ -57,3 +57,10 @@ its existing Docker network.
 
 - Run a real ACP prompt and a phone recording; then stop host Bridge/Vite.
 - Pin image digests; add a web healthcheck; avoid repeat profile init.
+
+## Runtime addendum
+
+- Docker WSS through Caddy 8443: session `825064ef-fc3f-4af8-abfa-d411f549a13c`; prompt `Reply with exactly OK` returned `OK` / `end_turn` via official DSH -> `backend:4000` gateway.
+- Host Bridge/Vite/STT stopped; only the Docker stack and gateway remain active.
+- Real phone recording over 8443 remains user acceptance; `dsh-workspace` is intentionally empty.
+
