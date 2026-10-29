@@ -2,18 +2,65 @@
 
 Runs the full project in Docker:
 
-- `stt` 鈥?FunASR OpenAI-compatible API (`funasr-openai-api:cpu-2026-10`), internal only.
-- `bridge` 鈥?DSH Mobile Bridge **and** the `dsh` CLI in one container (ACP is stdio).
-- `web` 鈥?Caddy serving the mobile static build over HTTPS on `8443`.
+- `stt` - FunASR OpenAI-compatible API (`funasr-openai-api:cpu-2026-10`), internal only.
+- `bridge` - DSH Mobile Bridge **and** the `dsh` CLI in one container (ACP is stdio).
+- `web` - Caddy serving the mobile static build over HTTPS on `8443`.
 
-Only `web` publishes a host port. Phones talk to Caddy; Caddy proxies `/api/*`
-and `/ws*` to the Bridge. The Bridge talks to STT and to the LLM gateway.
+In the default variant only `web` publishes a host port. Phones talk to Caddy;
+Caddy proxies `/api/*` and `/ws*` to the Bridge. The Bridge talks to STT and to
+the LLM gateway. The all-in-one variant additionally publishes the Gateway UI
+on `8080`.
+
+## Two variants
+
+- `docker-compose.yml` (default) expects an already running external gateway on
+  the `llm-gateaway_default` network. The Bridge joins that network.
+- `docker-compose.with-gateaway.yml` (all-in-one, opt-in) adds GateAway
+  `postgres`, `migrate`, `backend`, and `ui` to the same `app` network. No
+  external gateway network is required.
+
+Both use project name `dsh-mobile` and the same `dsh-mobile_*` volumes. The
+all-in-one variant mounts the external volume `llm-gateaway_pgdata`, so the
+existing Gateway client key and audit data survive a switch.
+
+### Switching to the all-in-one stack
+
+Run from the repository root:
+
+1. Stop the current app stack:
+   ```bash
+   docker compose -f deploy/docker-compose.yml down
+   ```
+2. Stop the existing Gateway stack:
+   ```bash
+   docker compose -f ../LLM-GateAway/docker-compose.yml down
+   ```
+3. Start the combined stack:
+   ```bash
+   docker compose -f deploy/docker-compose.with-gateaway.yml up -d
+   ```
+4. URLs: app `https://192.168.71.5:8443`, Gateway UI
+   `http://192.168.71.5:8080`.
+5. Data is preserved: `dsh-mobile_bridge-data`, `dsh-mobile_dsh-home`,
+   `dsh-mobile_dsh-workspace`, and `llm-gateaway_pgdata` are reused. The client
+   `GATEAWAY_API_KEY` remains valid because the database volume is reused.
+
+Switch back by stopping the combined stack, then starting the default app stack
+and the original Gateway compose file. Do not run both Gateway variants at the
+same time: they publish the same UI port and mount the same Postgres volume.
+
+The variant reads `GATEWAY_*` and `POSTGRES_PASSWORD` from `deploy/.env`
+(placeholders in `.env.example`). Keep `POSTGRES_PASSWORD` URL-safe; it is part
+of the backend DSN. `GATEWAY_REPO` overrides the local Gateway build context
+(default `../../LLM-GateAway`); the existing `llm-gateaway-*:local` images are
+reused unless you rebuild.
 
 ## Prerequisites
 
 1. Docker Engine/Desktop with Compose v2.24+ (the `env_file.required: false`
    syntax).
-2. The gateway network already exists:
+2. The gateway network already exists (default variant only; skip for the
+   all-in-one file):
    ```bash
    docker network inspect llm-gateaway_default
    ```
@@ -105,9 +152,12 @@ full trust; Android: user CA). Plain HTTP from a phone disables `getUserMedia`.
 | web | `8443` (`WEB_PORT`) | `443` |
 | bridge | none | `8787` |
 | stt | none | `8000` |
+| gateway ui (all-in-one) | `8080` (`GATEWAY_UI_PORT`) | `80` |
 
-`bridge` joins `app` and external `llm-gateaway_default`; `stt`/`web` join only
-`app`. The gateway key never leaves the Bridge container.
+`bridge` joins `app` and external `llm-gateaway_default` in the default variant;
+`stt`/`web` join only `app`. In the all-in-one variant everything joins `app`
+and the gateway services have no host port except the UI. The gateway key never
+leaves the Bridge container.
 
 ## Data and workspace
 
@@ -204,3 +254,5 @@ docker compose down -v       # destructive: DB, DSH home, workspace
 | `PIP_INDEX_URL` | Tsinghua | STT Python deps |
 | `TORCH_INDEX_URL` / `TORCH_VERSION` | official CPU / `2.6.0` | STT torch |
 | `FUNASR_REPO` / `FUNASR_COMMIT` | GitHub / pinned | STT source |
+| `GATEWAY_REPO` | `../../LLM-GateAway` | all-in-one Gateway build context (optional) |
+| `GATEWAY_UI_PORT` | `8080` | all-in-one Gateway UI host port |
