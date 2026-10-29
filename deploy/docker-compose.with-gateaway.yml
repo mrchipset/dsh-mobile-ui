@@ -29,8 +29,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gateway}
       POSTGRES_DB: gateway
     volumes:
-      # Reuse the existing Gateway database (clients, keys, audit records).
-      - gateaway-pgdata:/var/lib/postgresql/data
+      # Reuse an existing Gateway database or a fresh bootstrap volume.
+      - gateway-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 5s
@@ -84,6 +84,9 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    volumes:
+      # Generated secrets are persisted on the host for inspection/rotation.
+      - ./secrets:/secrets:ro
     healthcheck:
       test:
         [
@@ -185,6 +188,7 @@ services:
       - bridge-data:/data
       - dsh-home:/data/dsh
       - ${WORKSPACE_PATH:-dsh-workspace}:/workspace
+      - ./secrets:/secrets:ro
     depends_on:
       stt:
         condition: service_healthy
@@ -234,6 +238,8 @@ volumes:
   bridge-data:
   dsh-home:
   dsh-workspace:
-  gateaway-pgdata:
-    external: true
-    name: llm-gateaway_pgdata
+  gateway-pgdata:
+    # Existing DB: llm-gateaway_pgdata + external true.
+    # Fresh bootstrap: dsh-mobile-gateway-pgdata + external false.
+    name: ${GATEWAY_PGDATA_VOLUME:-llm-gateaway_pgdata}
+    external: ${GATEWAY_PGDATA_EXTERNAL:-true}

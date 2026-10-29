@@ -13,6 +13,8 @@ data/
 .env.local
 .env.*.local
 !.env.example
+deploy/.env
+deploy/secrets/
 .DS_Store
 Thumbs.db
 *.log

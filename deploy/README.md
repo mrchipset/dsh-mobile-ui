@@ -49,6 +49,28 @@ Switch back by stopping the combined stack, then starting the default app stack
 and the original Gateway compose file. Do not run both Gateway variants at the
 same time: they publish the same UI port and mount the same Postgres volume.
 
+### Automated bootstrap and build manual
+
+See **[BUILD_MANUAL.md](BUILD_MANUAL.md)** for the full Chinese build/run manual,
+key storage, rotation, and manual Gateway API steps. For the automated path:
+
+```powershell
+$env:GATEWAY_DEEPSEEK_API_KEY = '<upstream DeepSeek key>'
+pwsh deploy/bootstrap.ps1
+```
+
+The script clones/uses `../LLM-GateAway`, creates `deploy/secrets/` and
+`deploy/.env`, builds the images, starts GateAway, creates/reuses the
+`dsh-mobile` tenant and client key, registers `deepseek-flash`, then starts the
+app stack. `-ExistingGateway` reuses `llm-gateaway_pgdata`; `-Force` stops both
+old stacks and recreates only the fresh Gateway DB volume; `-SkipBuild` requires
+existing images; `-GatewayRepo <path>` overrides the checkout. It never prints
+secret values.
+
+A fresh bootstrap writes `GATEWAY_PGDATA_VOLUME=dsh-mobile-gateway-pgdata` and
+`GATEWAY_PGDATA_EXTERNAL=false`; switching to an existing Gateway uses
+`llm-gateaway_pgdata` and `true`.
+
 The variant reads `GATEWAY_*` and `POSTGRES_PASSWORD` from `deploy/.env`
 (placeholders in `.env.example`). Keep `POSTGRES_PASSWORD` URL-safe; it is part
 of the backend DSN. `GATEWAY_REPO` overrides the local Gateway build context
