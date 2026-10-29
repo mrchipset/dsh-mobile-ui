@@ -58,3 +58,10 @@ leaking keys or rotating the DB password/master key under an existing volume.
 - Run `pwsh deploy/bootstrap.ps1` with `GATEWAY_DEEPSEEK_API_KEY`, verify
   `/readyz`, `/v1/models`, Bridge `/api/health`, and a phone recording; test an
   existing-gateway switch and consider a bash bootstrap.
+
+## Orchestrator closeout
+
+- Added `deploy/secrets` and `deploy/secrets/**` to `.dockerignore` so generated keys never enter the Docker build context.
+- Saved the current runtime bridge/gateway/master/postgres/upstream keys into `deploy/secrets` (host-mapped, read-only in the all-in-one compose); values were not printed.
+- The current external-gateway stack remains running; the all-in-one bootstrap was not executed.
+
