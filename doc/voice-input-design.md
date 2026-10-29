@@ -213,7 +213,8 @@ type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
 - `contextmenu` is prevented; `touch-action: none`; pointer capture is used.
 - 60 s auto-stop; clips under 300 ms are treated as accidental.
 - Recording bar shows timer, input level, cancel, and stop.
-- While transcribing, show a spinner, allow cancel, and disable a second recording.
+- While transcribing, show a spinner and disable the mic; the recording bar’s cancel aborts the
+  transcription and a second recording cannot start.
 - On success, **replace** the draft with the transcript and focus the textarea (do not append).
 - Do not auto-send.
 - Keyboard fallback: click or Space/Enter toggles recording.
@@ -231,20 +232,26 @@ type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
 
 ### Pending attachment and playback
 
-- New voice input replaces the pending clip and, once its transcript arrives, replaces the draft.
+- A new recording’s clip and transcript commit **together only on transcript success**. Failed,
+  empty, or cancelled attempts preserve the previous pending pair; the new clip is discarded.
 - The composer shows one pending chip with local play/pause, duration, progress, and remove. Remove
   clears only the audio; the text remains and can be sent without it.
 - Send uploads first with `POST /api/sessions/:sessionId/audio` (Bearer, explicit `Content-Type`,
-  required `X-Audio-Duration-Ms`) and only then calls `session.prompt` with `audioId`.
-- Upload failure retains the chip and draft and shows a retry; a failed prompt after upload keeps the
-  uploaded id so the next send can retry without losing the recording.
+  required `X-Audio-Duration-Ms`) and only then calls `session.prompt` with `audioId` and a stable
+  `clientMsgId`.
+- Upload failure retains the chip and draft and shows a retry. A later WS prompt error restores the
+  last `{ text, audioId, clientMsgId }`; retry reuses both IDs without a second upload.
 - Sent user messages render `MessageBlock.audio` as a compact player. The first play fetches
   `GET /api/audio/:id` with Bearer, creates an object URL, and caches/releases it per audio id; no
-  unauthenticated `<audio src>` is used. 401/404/network failures show an inline retry state.
-- `transcoded: false` shows a warning that the playback copy is the original format and may be
-  limited on iPhone, but does not block sending.
+  unauthenticated `<audio src>` is used. 401/404/network/media failures show an inline retry state.
+  Upload/playback requests time out at 40 s / 20 s and abort on unmount.
+- `transcoded: false` only shows the compatibility warning for real fallback copies
+  (`audio/webm`, `audio/ogg`, ADTS `audio/aac`). iPhone `audio/mp4`/`audio/x-m4a` is already
+  playable and is not warned. The warning is session-memory only and is absent after reload.
+- If async media play is blocked, keep the loaded URL and show “再点一次播放”.
 - Demo mode generates a local WAV for preview and sent playback, clearly marked “模拟”; it never
-  uploads or fetches audio.
+  uploads or fetches audio. Pending demo audio is released on replace/remove; sent demo audio stays
+  until demo reset.
 
 ### Errors
 

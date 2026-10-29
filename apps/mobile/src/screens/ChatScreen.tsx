@@ -219,7 +219,7 @@ export function ChatScreen({ sessionId }: { sessionId: string }) {
           canPrompt={canPrompt}
           cancelling={cancelling}
           permissionPending={permission !== null}
-          onSend={(text, audioId) => sendPrompt(sessionId, text, audioId)}
+          onSend={(text, audioId, clientMsgId) => sendPrompt(sessionId, text, audioId, clientMsgId)}
           onCancel={() => cancelPrompt(sessionId)}
           onOpenLease={() => setLeaseOpen(true)}
           onOpenPermission={() => setPermissionOpen(true)}

@@ -23,8 +23,13 @@ export type AudioErrorCode =
   | 'audio_busy'
   | 'audio_not_found'
   | 'audio_upstream_error'
+  | 'audio_timeout'
+  | 'playback_timeout'
   | 'network_error'
   | 'invalid_response'
+
+export const UPLOAD_TIMEOUT_MS = 40_000
+export const PLAYBACK_TIMEOUT_MS = 20_000
 
 const AUDIO_ERROR_COPY: Record<AudioErrorCode, string> = {
   unauthorized: '访问令牌已失效，请重新连接 Bridge',
@@ -38,6 +43,8 @@ const AUDIO_ERROR_COPY: Record<AudioErrorCode, string> = {
   audio_busy: '音频处理正忙，请稍后重试',
   audio_not_found: '语音已不存在',
   audio_upstream_error: '音频服务暂时不可用，请重试',
+  audio_timeout: '音频上传超时，录音已保留，请重试',
+  playback_timeout: '语音加载超时，请重试',
   network_error: '网络中断，无法访问语音服务',
   invalid_response: '音频服务返回了无法识别的结果',
 }
@@ -86,6 +93,40 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true
+}
+
+function withTimeout(external: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  if (external === undefined) return timeout
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([external, timeout])
+
+  const controller = new AbortController()
+  const abort = (): void => controller.abort()
+  if (external.aborted) controller.abort()
+  else external.addEventListener('abort', abort, { once: true })
+  timeout.addEventListener('abort', abort, { once: true })
+  return controller.signal
+}
+
+export function isNotAllowedPlaybackError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'NotAllowedError'
+  )
+}
+
+export function mediaPlaybackErrorMessage(mimeType: string | undefined): string {
+  const mime = (mimeType ?? '').toLowerCase()
+  if (mime.includes('webm')) return '当前浏览器无法播放 WebM 录音，请重试'
+  if (mime.includes('ogg')) return '当前浏览器无法播放 Ogg 录音，请重试'
+  if (mime.includes('aac')) return '当前浏览器无法播放 AAC 录音，请重试'
+  return '当前浏览器无法播放这段录音，请重试'
+}
+
 function isKnownError(value: string): value is AudioErrorCode {
   return Object.hasOwn(AUDIO_ERROR_COPY, value)
 }
@@ -121,6 +162,7 @@ export async function uploadAudio(input: UploadAudioInput): Promise<UploadedAudi
   const mimeType = input.blob.type.trim()
   if (mimeType.length === 0) throw new AudioError('unsupported_audio')
 
+  const signal = withTimeout(input.signal, UPLOAD_TIMEOUT_MS)
   let response: Response
   try {
     response = await fetch(`/api/sessions/${encodeURIComponent(input.sessionId)}/audio`, {
@@ -133,10 +175,10 @@ export async function uploadAudio(input: UploadAudioInput): Promise<UploadedAudi
       },
       body: input.blob,
       credentials: 'same-origin',
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      signal,
     })
   } catch {
-    throw new AudioError('network_error')
+    throw new AudioError(signal.aborted ? 'audio_timeout' : 'network_error')
   }
 
   const body = await readJson(response)
@@ -170,6 +212,7 @@ export async function uploadAudio(input: UploadAudioInput): Promise<UploadedAudi
 }
 
 export async function fetchAudioBlob(input: FetchAudioInput): Promise<Blob> {
+  const signal = withTimeout(input.signal, PLAYBACK_TIMEOUT_MS)
   let response: Response
   try {
     response = await fetch(`/api/audio/${encodeURIComponent(input.audioId)}`, {
@@ -178,10 +221,10 @@ export async function fetchAudioBlob(input: FetchAudioInput): Promise<Blob> {
         Accept: 'audio/*',
       },
       credentials: 'same-origin',
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      signal,
     })
   } catch {
-    throw new AudioError('network_error')
+    throw new AudioError(signal.aborted ? 'playback_timeout' : 'network_error')
   }
 
   if (!response.ok) {
@@ -201,6 +244,18 @@ export async function fetchAudioBlob(input: FetchAudioInput): Promise<Blob> {
 
   const headerType = response.headers.get('content-type')?.trim() ?? ''
   return headerType.length > 0 ? new Blob([blob], { type: headerType }) : blob
+}
+
+/**
+ * `transcoded:false` also means "already playable" for iPhone MP4/M4A inputs. Only warn for
+ * playback copies that are genuine browser fallbacks.
+ */
+export function shouldShowCompatibilityWarning(
+  meta: Pick<AudioMeta, 'transcoded' | 'playbackMimeType' | 'demo'> | undefined,
+): boolean {
+  if (meta === undefined || meta.demo === true || meta.transcoded !== false) return false
+  const mime = meta.playbackMimeType.toLowerCase().split(';')[0]?.trim() ?? ''
+  return mime === 'audio/webm' || mime === 'audio/ogg' || mime === 'audio/aac'
 }
 
 export function formatAudioDuration(durationMs: number): string {
@@ -293,14 +348,26 @@ export function getLocalAudioBlob(audioId: string): Blob | undefined {
   return localAudio.get(audioId)
 }
 
+export function releaseLocalAudio(audioId: string): void {
+  localAudio.delete(audioId)
+  const meta = audioMeta.get(audioId)
+  if (meta?.demo === true) audioMeta.delete(audioId)
+}
+
 export function clearLocalAudio(): void {
-  localAudio.clear()
+  for (const id of localAudio.keys()) releaseLocalAudio(id)
   for (const [id, meta] of audioMeta) {
     if (meta.demo === true) audioMeta.delete(id)
   }
 }
 
-export async function acquireRemoteAudioUrl(audioId: string, token: string): Promise<string> {
+export async function acquireRemoteAudioUrl(
+  audioId: string,
+  token: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (isAborted(signal)) throw new AudioError('playback_timeout')
+
   const cached = remoteUrls.get(audioId)
   if (cached !== undefined) {
     cached.refs += 1
@@ -310,7 +377,11 @@ export async function acquireRemoteAudioUrl(audioId: string, token: string): Pro
   const existing = pendingRemoteUrls.get(audioId)
   const pending =
     existing ??
-    fetchAudioBlob({ audioId, token }).then((blob) => {
+    fetchAudioBlob({
+      audioId,
+      token,
+      ...(signal === undefined ? {} : { signal }),
+    }).then((blob) => {
       const url = URL.createObjectURL(blob)
       remoteUrls.set(audioId, { url, refs: 0 })
       return url
@@ -321,10 +392,19 @@ export async function acquireRemoteAudioUrl(audioId: string, token: string): Pro
     pending.finally(() => pendingRemoteUrls.delete(audioId)).catch(() => undefined)
   }
 
-  const url = await pending
+  await pending
+  if (isAborted(signal)) {
+    const entry = remoteUrls.get(audioId)
+    if (entry !== undefined && entry.refs === 0) {
+      URL.revokeObjectURL(entry.url)
+      remoteUrls.delete(audioId)
+    }
+    throw new AudioError('playback_timeout')
+  }
   const entry = remoteUrls.get(audioId)
-  if (entry !== undefined) entry.refs += 1
-  return url
+  if (entry === undefined) return acquireRemoteAudioUrl(audioId, token, signal)
+  entry.refs += 1
+  return entry.url
 }
 
 export function releaseRemoteAudioUrl(audioId: string): void {

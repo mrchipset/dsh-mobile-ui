@@ -7,7 +7,10 @@ import {
   formatAudioDuration,
   getAudioMeta,
   getLocalAudioBlob,
+  isNotAllowedPlaybackError,
+  mediaPlaybackErrorMessage,
   releaseRemoteAudioUrl,
+  shouldShowCompatibilityWarning,
   type UploadedAudio,
 } from '../../lib/audio'
 import { cn } from '../../lib/utils'
@@ -53,10 +56,13 @@ function AudioPlayer({
   const meta = audioId === undefined ? undefined : getAudioMeta(audioId)
   const isDemo = demo === true || meta?.demo === true
   const audioRef = useRef<HTMLAudioElement>(null)
+  const localUrlRef = useRef<string | null>(null)
   const remoteAcquiredRef = useRef(false)
+  const remoteAbortRef = useRef<AbortController | null>(null)
   const audioIdRef = useRef(audioId)
   const mountedRef = useRef(true)
   audioIdRef.current = audioId
+  const sourceMime = localBlob?.type ?? meta?.playbackMimeType ?? ''
 
   const [status, setStatus] = useState<PlaybackStatus>(() =>
     localBlob === undefined ? 'idle' : 'ready',
@@ -87,6 +93,7 @@ function AudioPlayer({
     }
     if (localBlob !== undefined) {
       localUrl = URL.createObjectURL(localBlob)
+      localUrlRef.current = localUrl
       if (audio !== null) {
         audio.src = localUrl
         audio.load()
@@ -94,12 +101,15 @@ function AudioPlayer({
     }
 
     return () => {
+      remoteAbortRef.current?.abort()
+      remoteAbortRef.current = null
       if (audio !== null) {
         audio.pause()
         audio.removeAttribute('src')
         audio.load()
       }
       if (localUrl !== null) URL.revokeObjectURL(localUrl)
+      localUrlRef.current = null
       if (remoteAcquiredRef.current && audioId !== undefined) {
         releaseRemoteAudioUrl(audioId)
       }
@@ -121,34 +131,51 @@ function AudioPlayer({
     }
 
     if (audio.src.length === 0) {
-      if (audioId === undefined) return
-      const requestedId = audioId
-      setStatus('loading')
-      setError(null)
-      try {
-        const url = await acquireRemoteAudioUrl(requestedId, token)
-        if (!mountedRef.current || audioIdRef.current !== requestedId) {
-          releaseRemoteAudioUrl(requestedId)
-          return
-        }
-        remoteAcquiredRef.current = true
-        audio.src = url
+      if (localBlob !== undefined) {
+        const localUrl = localUrlRef.current ?? URL.createObjectURL(localBlob)
+        localUrlRef.current = localUrl
+        audio.src = localUrl
         audio.load()
         setStatus('ready')
-      } catch (loadError) {
-        if (!mountedRef.current) return
-        setStatus('error')
-        setError(audioErrorCopy(loadError))
-        return
+      } else {
+        if (audioId === undefined) return
+        const requestedId = audioId
+        const controller = new AbortController()
+        remoteAbortRef.current = controller
+        setStatus('loading')
+        setError(null)
+        try {
+          const url = await acquireRemoteAudioUrl(requestedId, token, controller.signal)
+          if (!mountedRef.current || audioIdRef.current !== requestedId) {
+            releaseRemoteAudioUrl(requestedId)
+            return
+          }
+          remoteAcquiredRef.current = true
+          audio.src = url
+          audio.load()
+          setStatus('ready')
+        } catch (loadError) {
+          if (!mountedRef.current || audioIdRef.current !== requestedId) return
+          setStatus('error')
+          setError(audioErrorCopy(loadError))
+          return
+        } finally {
+          if (remoteAbortRef.current === controller) remoteAbortRef.current = null
+        }
       }
     }
 
     try {
       await audio.play()
-    } catch {
+    } catch (playError) {
       if (!mountedRef.current) return
+      if (isNotAllowedPlaybackError(playError)) {
+        setStatus('ready')
+        setError('浏览器暂停了播放，请再点一次播放')
+        return
+      }
       setStatus('error')
-      setError('音频无法播放，请重试')
+      setError(mediaPlaybackErrorMessage(sourceMime))
     }
   }
 
@@ -293,10 +320,19 @@ function AudioPlayer({
           event.currentTarget.currentTime = 0
         }}
         onError={(event) => {
-          if (event.currentTarget.currentSrc.length === 0) return
+          const audio = event.currentTarget
+          if (audio.currentSrc.length === 0) return
+          audio.pause()
+          audio.removeAttribute('src')
+          audio.load()
+          if (remoteAcquiredRef.current && audioId !== undefined) {
+            releaseRemoteAudioUrl(audioId)
+            remoteAcquiredRef.current = false
+          }
           setPlaying(false)
+          setCurrentMs(0)
           setStatus('error')
-          setError('音频无法播放，请重试')
+          setError(mediaPlaybackErrorMessage(sourceMime))
         }}
         className="hidden"
       />
@@ -318,7 +354,9 @@ export function PendingAudioChip({
   onRemove: () => void
 }) {
   const warning =
-    uploaded !== undefined && !demo && uploaded.transcoded === false ? WARNING_COPY : undefined
+    uploaded !== undefined && shouldShowCompatibilityWarning({ ...uploaded, demo })
+      ? WARNING_COPY
+      : undefined
 
   return (
     <div className="animate-fade-in mb-2 flex items-center gap-2 rounded-[20px] border border-line bg-ink-850/90 py-1.5 pl-2 pr-1.5">
@@ -329,6 +367,7 @@ export function PendingAudioChip({
         tone="surface"
         demo={demo}
         warning={warning}
+        disabled={sending}
         className="min-w-0 flex-1"
       />
       <button
@@ -346,8 +385,7 @@ export function PendingAudioChip({
 
 export function MessageAudio({ attachment }: { attachment: AudioAttachmentData }) {
   const meta = getAudioMeta(attachment.id)
-  const warning =
-    meta !== undefined && meta.demo !== true && meta.transcoded === false ? WARNING_COPY : undefined
+  const warning = shouldShowCompatibilityWarning(meta) ? WARNING_COPY : undefined
   return (
     <AudioPlayer
       audioId={attachment.id}

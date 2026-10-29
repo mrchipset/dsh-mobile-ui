@@ -1,11 +1,17 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  acquireRemoteAudioUrl,
   createDemoAudioMeta,
   createDemoWavBlob,
   fetchAudioBlob,
   formatAudioDuration,
   getAudioMeta,
   getLocalAudioBlob,
+  isNotAllowedPlaybackError,
+  mediaPlaybackErrorMessage,
+  releaseLocalAudio,
+  releaseRemoteAudioUrl,
+  shouldShowCompatibilityWarning,
   uploadAudio,
 } from './audio'
 
@@ -113,6 +119,59 @@ describe('uploadAudio', () => {
       uploadAudio({ sessionId: 's', blob: clip(), durationMs: 900, token: 'token' }),
     ).rejects.toMatchObject({ code: 'network_error' })
   })
+
+  it('maps 404 to session_gone and 415 to unsupported_audio', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'session_gone' }, 404)))
+    await expect(
+      uploadAudio({ sessionId: 'missing', blob: clip(), durationMs: 900, token: 'token' }),
+    ).rejects.toMatchObject({ code: 'session_gone' })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'unsupported_audio' }, 415)),
+    )
+    await expect(
+      uploadAudio({ sessionId: 's', blob: clip(), durationMs: 900, token: 'token' }),
+    ).rejects.toMatchObject({ code: 'unsupported_audio' })
+  })
+
+  it('rejects a successful response missing transcoded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            id: 'audio-x',
+            mimeType: 'audio/webm',
+            playbackMimeType: 'audio/mp4',
+            durationMs: 900,
+            sizeBytes: 3,
+          },
+          201,
+        ),
+      ),
+    )
+
+    await expect(
+      uploadAudio({ sessionId: 's', blob: clip(), durationMs: 900, token: 'token' }),
+    ).rejects.toMatchObject({ code: 'invalid_response' })
+  })
+
+  it('maps an aborted upload to audio_timeout', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError')))
+
+    await expect(
+      uploadAudio({
+        sessionId: 's',
+        blob: clip(),
+        durationMs: 900,
+        token: 'token',
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ code: 'audio_timeout' })
+  })
 })
 
 describe('fetchAudioBlob', () => {
@@ -146,16 +205,31 @@ describe('fetchAudioBlob', () => {
     })
   })
 
-  it('maps playback 401 and network failures', async () => {
+  it('maps playback 401, 5xx, and network failures', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'unauthorized' }, 401)))
     await expect(fetchAudioBlob({ audioId: 'a', token: 'bad' })).rejects.toMatchObject({
       code: 'unauthorized',
+    })
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'upstream' }, 500)))
+    await expect(fetchAudioBlob({ audioId: 'a', token: 'token' })).rejects.toMatchObject({
+      code: 'audio_upstream_error',
     })
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     await expect(fetchAudioBlob({ audioId: 'a', token: 'token' })).rejects.toMatchObject({
       code: 'network_error',
     })
+  })
+
+  it('maps an aborted playback fetch to playback_timeout', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError')))
+
+    await expect(
+      fetchAudioBlob({ audioId: 'a', token: 'token', signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'playback_timeout' })
   })
 })
 
@@ -178,5 +252,148 @@ describe('audio metadata and demo helpers', () => {
   it('formats durations', () => {
     expect(formatAudioDuration(0)).toBe('0:00')
     expect(formatAudioDuration(65_000)).toBe('1:05')
+  })
+
+  it('releases local demo audio metadata and blob', () => {
+    const wav = createDemoWavBlob(600)
+    const meta = createDemoAudioMeta({ blob: wav, mimeType: 'audio/wav', durationMs: 600 })
+    releaseLocalAudio(meta.id)
+    expect(getAudioMeta(meta.id)).toBeUndefined()
+    expect(getLocalAudioBlob(meta.id)).toBeUndefined()
+  })
+})
+
+describe('audio warning and media helpers', () => {
+  it('suppresses the warning for already-playable MP4/M4A fallbacks', () => {
+    expect(
+      shouldShowCompatibilityWarning({
+        transcoded: false,
+        playbackMimeType: 'audio/mp4',
+      }),
+    ).toBe(false)
+    expect(
+      shouldShowCompatibilityWarning({
+        transcoded: false,
+        playbackMimeType: 'audio/x-m4a',
+      }),
+    ).toBe(false)
+  })
+
+  it('warns only for real browser fallbacks', () => {
+    expect(
+      shouldShowCompatibilityWarning({
+        transcoded: false,
+        playbackMimeType: 'audio/webm;codecs=opus',
+      }),
+    ).toBe(true)
+    expect(
+      shouldShowCompatibilityWarning({ transcoded: false, playbackMimeType: 'audio/ogg' }),
+    ).toBe(true)
+    expect(
+      shouldShowCompatibilityWarning({ transcoded: false, playbackMimeType: 'audio/aac' }),
+    ).toBe(true)
+    expect(
+      shouldShowCompatibilityWarning({
+        transcoded: true,
+        playbackMimeType: 'audio/webm',
+      }),
+    ).toBe(false)
+    expect(
+      shouldShowCompatibilityWarning({
+        transcoded: false,
+        playbackMimeType: 'audio/webm',
+        demo: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('uses format-specific media error copy and detects autoplay blocking', () => {
+    expect(mediaPlaybackErrorMessage('audio/webm;codecs=opus')).toContain('WebM')
+    expect(mediaPlaybackErrorMessage('audio/ogg')).toContain('Ogg')
+    expect(mediaPlaybackErrorMessage('audio/aac')).toContain('AAC')
+    expect(mediaPlaybackErrorMessage('audio/mp4')).toContain('这段录音')
+    expect(isNotAllowedPlaybackError(new DOMException('blocked', 'NotAllowedError'))).toBe(true)
+    expect(isNotAllowedPlaybackError(new Error('other'))).toBe(false)
+  })
+})
+
+describe('remote audio URL cache', () => {
+  it('shares one fetch across acquires and revokes only at zero refs', async () => {
+    const id = 'remote-shared-test'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2]), {
+        status: 200,
+        headers: { 'content-type': 'audio/wav' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const createSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:shared-test')
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+
+    const [first, second] = await Promise.all([
+      acquireRemoteAudioUrl(id, 'token'),
+      acquireRemoteAudioUrl(id, 'token'),
+    ])
+    expect(first).toBe('blob:shared-test')
+    expect(second).toBe(first)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(createSpy).toHaveBeenCalledTimes(1)
+
+    releaseRemoteAudioUrl(id)
+    const third = await acquireRemoteAudioUrl(id, 'token')
+    expect(third).toBe(first)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    releaseRemoteAudioUrl(id)
+    releaseRemoteAudioUrl(id)
+    expect(revokeSpy).toHaveBeenCalledWith('blob:shared-test')
+  })
+
+  it('retries after a pending fetch failure', async () => {
+    const id = 'remote-fail-test'
+    const failingFetch = vi.fn().mockRejectedValue(new Error('offline'))
+    vi.stubGlobal('fetch', failingFetch)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retry-test')
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+
+    await expect(acquireRemoteAudioUrl(id, 'token')).rejects.toMatchObject({
+      code: 'network_error',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const successFetch = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([3]), {
+        status: 200,
+        headers: { 'content-type': 'audio/wav' },
+      }),
+    )
+    vi.stubGlobal('fetch', successFetch)
+    const url = await acquireRemoteAudioUrl(id, 'token')
+    expect(url).toBe('blob:retry-test')
+    expect(successFetch).toHaveBeenCalledTimes(1)
+    releaseRemoteAudioUrl(id)
+    expect(revokeSpy).toHaveBeenCalledWith('blob:retry-test')
+  })
+
+  it('does not create a URL when the caller aborts during fetch (unmount)', async () => {
+    const id = 'remote-abort-test'
+    const controller = new AbortController()
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal
+          const abort = (): void => reject(new DOMException('aborted', 'AbortError'))
+          if (signal?.aborted === true) abort()
+          else signal?.addEventListener('abort', abort, { once: true })
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const createSpy = vi.spyOn(URL, 'createObjectURL')
+
+    const pending = acquireRemoteAudioUrl(id, 'token', controller.signal)
+    const assertion = expect(pending).rejects.toMatchObject({ code: 'playback_timeout' })
+    controller.abort()
+    await assertion
+    expect(createSpy).not.toHaveBeenCalled()
   })
 })

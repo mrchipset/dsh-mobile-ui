@@ -41,7 +41,16 @@ export interface SessionData {
 interface PendingPrompt {
   clientMsgId: string
   text: string
+  audioId?: string
   startedAt: number
+}
+
+export interface PromptFailure {
+  clientMsgId: string
+  text: string
+  audioId?: string
+  code: string
+  message: string
 }
 
 interface StoreError {
@@ -62,6 +71,7 @@ export interface BridgeStore {
   data: Record<string, SessionData>
   activeSessionId: string | null
   pendingPrompt: Record<string, PendingPrompt>
+  promptFailure: Record<string, PromptFailure>
   cancelling: Record<string, boolean>
   permissions: Record<string, PermissionRequest>
   permissionReceivedAt: Record<string, number>
@@ -85,7 +95,7 @@ export interface BridgeStore {
   refreshSessions: () => void
   createSession: () => void
   attachSession: (sessionId: string) => void
-  sendPrompt: (sessionId: string, text: string, audioId?: string) => boolean
+  sendPrompt: (sessionId: string, text: string, audioId?: string, clientMsgId?: string) => boolean
   cancelPrompt: (sessionId: string) => void
   takeLease: (sessionId: string) => void
   releaseLease: (sessionId: string) => void
@@ -93,6 +103,7 @@ export interface BridgeStore {
   triggerDemoPermission: (sessionId: string) => void
   refreshMcp: () => void
   clearError: () => void
+  consumePromptFailure: (sessionId: string) => void
   consumeNavigation: () => void
   receive: (message: ServerMessage) => void
 }
@@ -416,6 +427,7 @@ function createBridgeClient(): BridgeClient {
           data: {},
           activeSessionId: null,
           pendingPrompt: {},
+          promptFailure: {},
           cancelling: {},
           permissions: {},
           permissionReceivedAt: {},
@@ -451,6 +463,7 @@ function resetLiveState(): Pick<
   | 'data'
   | 'activeSessionId'
   | 'pendingPrompt'
+  | 'promptFailure'
   | 'cancelling'
   | 'permissions'
   | 'permissionReceivedAt'
@@ -471,6 +484,7 @@ function resetLiveState(): Pick<
     data: {},
     activeSessionId: null,
     pendingPrompt: {},
+    promptFailure: {},
     cancelling: {},
     permissions: {},
     permissionReceivedAt: {},
@@ -498,6 +512,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   data: {},
   activeSessionId: null,
   pendingPrompt: {},
+  promptFailure: {},
   cancelling: {},
   permissions: {},
   permissionReceivedAt: {},
@@ -617,6 +632,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
       data,
       activeSessionId: DEMO_PRIMARY_SESSION_ID,
       pendingPrompt: {},
+      promptFailure: {},
       cancelling: {},
       permissions: {},
       permissionReceivedAt: {},
@@ -722,7 +738,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
     if (client !== null) client.send({ type: 'session.attach', sessionId })
   },
 
-  sendPrompt: (sessionId, text, audioId) => {
+  sendPrompt: (sessionId, text, audioId, clientMsgId) => {
     const parsed = promptSchema.safeParse(text)
     if (!parsed.success) {
       notifyError(firstIssue(parsed.error))
@@ -751,22 +767,35 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
       return false
     }
 
-    const clientMsgId = randomId('p_')
-    set((current) => ({
-      pendingPrompt: {
-        ...current.pendingPrompt,
-        [sessionId]: { clientMsgId, text: parsed.data, startedAt: Date.now() },
-      },
-      sessions: {
-        ...current.sessions,
-        [sessionId]: { ...session, running: true },
-      },
-      lastError: null,
-    }))
+    const resolvedClientMsgId =
+      clientMsgId !== undefined && clientMsgId.trim().length > 0 && clientMsgId.length <= 64
+        ? clientMsgId
+        : randomId('p_')
+    set((current) => {
+      const promptFailure = { ...current.promptFailure }
+      delete promptFailure[sessionId]
+      return {
+        pendingPrompt: {
+          ...current.pendingPrompt,
+          [sessionId]: {
+            clientMsgId: resolvedClientMsgId,
+            text: parsed.data,
+            ...(audioId === undefined ? {} : { audioId }),
+            startedAt: Date.now(),
+          },
+        },
+        promptFailure,
+        sessions: {
+          ...current.sessions,
+          [sessionId]: { ...session, running: true },
+        },
+        lastError: null,
+      }
+    })
     const sent = sendLive({
       type: 'session.prompt',
       sessionId,
-      clientMsgId,
+      clientMsgId: resolvedClientMsgId,
       text: parsed.data,
       ...(audioId === undefined ? {} : { audioId }),
     })
@@ -945,6 +974,12 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   },
 
   clearError: () => set({ lastError: null }),
+  consumePromptFailure: (sessionId) =>
+    set((state) => {
+      const promptFailure = { ...state.promptFailure }
+      delete promptFailure[sessionId]
+      return { promptFailure }
+    }),
   consumeNavigation: () => set({ pendingNavigation: null }),
 
   receive: (message) => {
@@ -1005,6 +1040,8 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
 
           const pendingPrompt = { ...state.pendingPrompt }
           delete pendingPrompt[session.id]
+          const promptFailure = { ...state.promptFailure }
+          delete promptFailure[session.id]
           const cancelling = { ...state.cancelling }
           delete cancelling[session.id]
 
@@ -1023,6 +1060,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
             permissions,
             permissionReceivedAt,
             pendingPrompt,
+            promptFailure,
             cancelling,
             creating: false,
             pendingNavigation: state.creating ? session.id : state.pendingNavigation,
@@ -1141,9 +1179,11 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
           }
           const pendingPrompt = { ...state.pendingPrompt }
           delete pendingPrompt[message.sessionId]
+          const promptFailure = { ...state.promptFailure }
+          delete promptFailure[message.sessionId]
           const cancelling = { ...state.cancelling }
           delete cancelling[message.sessionId]
-          return { sessions, pendingPrompt, cancelling }
+          return { sessions, pendingPrompt, promptFailure, cancelling }
         })
         if (message.stopReason === 'cancelled' || message.stopReason === 'canceled') {
           toast.success('已停止生成')
@@ -1223,6 +1263,16 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
             if (latest !== undefined) {
               delete pendingPrompt[latest[0]]
               next.pendingPrompt = pendingPrompt
+              next.promptFailure = {
+                ...state.promptFailure,
+                [latest[0]]: {
+                  clientMsgId: latest[1].clientMsgId,
+                  text: latest[1].text,
+                  ...(latest[1].audioId === undefined ? {} : { audioId: latest[1].audioId }),
+                  code: message.code,
+                  message: copy,
+                },
+              }
               const summary = state.sessions[latest[0]]
               if (summary !== undefined) {
                 next.sessions = {
