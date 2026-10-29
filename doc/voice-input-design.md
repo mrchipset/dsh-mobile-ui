@@ -307,6 +307,10 @@ Preferred model: `paraformer` (Chinese + punctuation); `sensevoice` is a faster 
 - `/health` includes STT state and cached `/models` reachability.
 - Config tests for local and LAN base URLs, and readiness tests for true/false, timeout, cache, and disabled state.
 - Adapter test for OpenAI-compatible request/response mapping.
+- End-to-end test over a real HTTP listener and WebSocket: transcribe, upload,
+  prompt with `audioId`, reconnect snapshot/fold, and authenticated playback with
+  the mobile upload/playback modules. ACP, ffmpeg, and the STT upstream are faked;
+  see `apps/bridge/tests/voice-attachment-e2e.test.ts`.
 
 ### Mobile
 
