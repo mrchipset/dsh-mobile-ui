@@ -2,6 +2,7 @@ import cookie from '@fastify/cookie'
 import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { AcpSupervisor } from './acp/supervisor.js'
+import type { AudioTranscoder } from './audio/transcoder.js'
 import type { Config } from './config.js'
 import { registerHttpRoutes } from './http/server.js'
 import type { Logger } from './logger.js'
@@ -16,6 +17,7 @@ export interface AppDeps {
   supervisor?: AcpSupervisor
   stt?: SpeechToText
   sttReadiness?: SttReadinessProbe
+  transcoder?: AudioTranscoder
   logger: Logger
   permissionTtlMs?: number
 }

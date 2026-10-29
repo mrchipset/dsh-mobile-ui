@@ -18,6 +18,7 @@ export function openDatabase(config: Config): OpenDatabaseResult {
 
   const db = new Database(config.dbPath)
   db.pragma('busy_timeout = 5000')
+  db.pragma('foreign_keys = ON')
   migrate(db)
 
   let closed = false

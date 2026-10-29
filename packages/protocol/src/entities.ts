@@ -60,6 +60,15 @@ export const imageRefSchema = z.object({
 })
 export type ImageRef = z.infer<typeof imageRefSchema>
 
+export const audioAttachmentSchema = z.object({
+  id: z.string().min(1).max(64),
+  mimeType: z.string().min(1),
+  playbackMimeType: z.string().min(1),
+  durationMs: z.number().int().nonnegative(),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type AudioAttachment = z.infer<typeof audioAttachmentSchema>
+
 export const storedUpdateSchema = z.object({
   seq: z.number().int().positive(),
   kind: z.string(),

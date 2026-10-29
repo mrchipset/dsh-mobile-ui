@@ -109,6 +109,54 @@ describe('fold', () => {
     expect(latest?.entries[0]?.status).toBe('completed')
   })
 
+  it('keeps audio metadata on a user message across chunk merges', () => {
+    const audio = {
+      id: 'a1',
+      mimeType: 'audio/webm',
+      playbackMimeType: 'audio/mp4',
+      durationMs: 3200,
+      sizeBytes: 1234,
+    }
+    const blocks = fold([
+      update(1, 'user_message_chunk', {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'c1',
+        content: { type: 'text', text: 'voice text' },
+        audio,
+      }),
+      update(2, 'user_message_chunk', {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'c1',
+        content: { type: 'text', text: ' continued' },
+      }),
+    ])
+
+    expect(blocks).toHaveLength(1)
+    const message = blocks[0] as MessageBlock
+    expect(message.text).toBe('voice text continued')
+    expect(message.audio).toEqual(audio)
+  })
+
+  it('creates an audio-only user message when text is empty', () => {
+    const blocks = fold([
+      update(1, 'user_message_chunk', {
+        sessionUpdate: 'user_message_chunk',
+        messageId: 'c1',
+        content: { type: 'text', text: '' },
+        audio: {
+          id: 'a1',
+          mimeType: 'audio/webm',
+          playbackMimeType: 'audio/mp4',
+          durationMs: 1200,
+          sizeBytes: 99,
+        },
+      }),
+    ])
+
+    expect((blocks[0] as MessageBlock).text).toBe('')
+    expect((blocks[0] as MessageBlock).audio?.id).toBe('a1')
+  })
+
   it('prepends history boundary notices', () => {
     const blocks = fold([], { historyTruncated: true, historyStartsAt: 1_700_000_000_000 })
 

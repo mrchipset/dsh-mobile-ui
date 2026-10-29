@@ -1,5 +1,6 @@
 import { AcpSupervisor } from './acp/supervisor.js'
 import { buildApp } from './app.js'
+import { FfmpegTranscoder } from './audio/transcoder.js'
 import { loadConfig } from './config.js'
 import { openDatabase } from './db/index.js'
 import { loadEnvironment } from './env.js'
@@ -68,6 +69,7 @@ async function main(): Promise<void> {
   const sttReadiness = config.sttEnabled
     ? new SttReadiness({ baseUrl: config.sttBaseUrl, ...sttAuth })
     : undefined
+  const transcoder = new FfmpegTranscoder({ ffmpegPath: config.ffmpegPath, logger: log })
 
   let supervisor: AcpSupervisor | undefined
   if (config.acpEnabled) {
@@ -99,6 +101,7 @@ async function main(): Promise<void> {
     ...(supervisor === undefined ? {} : { supervisor }),
     ...(stt === undefined ? {} : { stt }),
     ...(sttReadiness === undefined ? {} : { sttReadiness }),
+    transcoder,
     logger: log,
   })
 

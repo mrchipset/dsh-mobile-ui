@@ -7,7 +7,12 @@ import type {
   ToolCallBlock,
   ToolCallStatus,
 } from './blocks'
-import type { ImageRef, StoredUpdate } from './entities'
+import {
+  type AudioAttachment,
+  audioAttachmentSchema,
+  type ImageRef,
+  type StoredUpdate,
+} from './entities'
 
 export interface FoldOptions {
   /** Epoch ms when the Bridge first recorded anything for this session. */
@@ -52,6 +57,11 @@ function asImageMime(value: string): ImageRef['mimeType'] | undefined {
   return IMAGE_MIME_TYPES.has(value as ImageRef['mimeType'])
     ? (value as ImageRef['mimeType'])
     : undefined
+}
+
+function readAudio(value: unknown): AudioAttachment | undefined {
+  const parsed = audioAttachmentSchema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
 }
 
 function readContent(content: unknown): { text?: string; image?: ImageRef } {
@@ -199,7 +209,8 @@ export function fold(updates: readonly StoredUpdate[], options: FoldOptions = {}
     if (kind === 'user_message_chunk' || kind === 'agent_message_chunk') {
       if (payload === undefined) continue
       const { text, image } = readContent(payload.content)
-      if (text === undefined && image === undefined) continue
+      const audio = kind === 'user_message_chunk' ? readAudio(payload.audio) : undefined
+      if (text === undefined && image === undefined && audio === undefined) continue
       const role = kind === 'user_message_chunk' ? 'user' : 'assistant'
       const key = messageIdFor(role, payload)
       const id = `msg:${key}`
@@ -211,6 +222,7 @@ export function fold(updates: readonly StoredUpdate[], options: FoldOptions = {}
           role,
           text: text ?? '',
           ...(image === undefined ? {} : { images: [image] }),
+          ...(audio === undefined ? {} : { audio }),
           ...(asString(payload.messageId) === undefined
             ? {}
             : { messageId: asString(payload.messageId) }),
@@ -218,10 +230,12 @@ export function fold(updates: readonly StoredUpdate[], options: FoldOptions = {}
           seq,
         })
       } else {
+        const nextAudio = audio ?? existing.audio
         put({
           ...existing,
           text: existing.text + (text ?? ''),
           ...(image === undefined ? {} : { images: [...(existing.images ?? []), image] }),
+          ...(nextAudio === undefined ? {} : { audio: nextAudio }),
           streaming: role === 'assistant',
           seq,
         })

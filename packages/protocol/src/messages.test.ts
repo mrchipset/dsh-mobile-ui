@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { audioAttachmentSchema } from './entities'
 import { clientMessageSchema, serverMessageSchema } from './messages'
 
 describe('client protocol', () => {
@@ -15,6 +16,27 @@ describe('client protocol', () => {
       images: [{ mimeType: 'image/png', data: 'AAAA' }],
     })
     expect(prompt.type).toBe('session.prompt')
+
+    const withAudio = clientMessageSchema.parse({
+      type: 'session.prompt',
+      sessionId: 's1',
+      clientMsgId: 'c2',
+      text: 'voice',
+      audioId: 'a1',
+    })
+    expect(withAudio).toMatchObject({ type: 'session.prompt', audioId: 'a1' })
+  })
+
+  it('rejects an oversized audioId', () => {
+    expect(
+      clientMessageSchema.safeParse({
+        type: 'session.prompt',
+        sessionId: 's1',
+        clientMsgId: 'c1',
+        text: 'x',
+        audioId: 'x'.repeat(65),
+      }).success,
+    ).toBe(false)
   })
 
   it('rejects oversized tokens and unknown message types', () => {
@@ -25,6 +47,28 @@ describe('client protocol', () => {
     expect(clientMessageSchema.safeParse({ type: 'not.a.message', sessionId: 's1' }).success).toBe(
       false,
     )
+  })
+})
+
+describe('audio attachment protocol', () => {
+  it('validates attachment metadata', () => {
+    const parsed = audioAttachmentSchema.safeParse({
+      id: 'a1',
+      mimeType: 'audio/webm',
+      playbackMimeType: 'audio/mp4',
+      durationMs: 1200,
+      sizeBytes: 4096,
+    })
+    expect(parsed.success).toBe(true)
+    expect(
+      audioAttachmentSchema.safeParse({
+        id: 'a1',
+        mimeType: 'audio/webm',
+        playbackMimeType: 'audio/mp4',
+        durationMs: -1,
+        sizeBytes: 4096,
+      }).success,
+    ).toBe(false)
   })
 })
 

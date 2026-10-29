@@ -62,6 +62,8 @@ const sessionPromptMessage = z.object({
   clientMsgId: z.string().max(64),
   text: z.string().max(64_000),
   images: z.array(imageRefSchema).max(4).optional(),
+  /** One previously uploaded voice attachment. */
+  audioId: z.string().min(1).max(64).optional(),
 })
 
 const sessionCancelMessage = z.object({

@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto'
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { AcpSupervisor } from '../acp/supervisor.js'
+import type { AudioTranscoder } from '../audio/transcoder.js'
 import { verifyToken } from '../auth.js'
 import type { Config } from '../config.js'
 import type { Logger } from '../logger.js'
@@ -28,6 +30,7 @@ export interface HttpRouteDeps {
   supervisor?: AcpSupervisor
   stt?: SpeechToText
   sttReadiness?: SttReadinessProbe
+  transcoder?: AudioTranscoder
   logger: Logger
 }
 
@@ -43,6 +46,12 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 
 function mediaTypeOf(header: string | undefined): string {
   return (header ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+}
+
+function durationFromHeader(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
 }
 
 export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): void {
@@ -103,17 +112,14 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
 
   let inFlight = 0
 
-  const requireTranscribeAuth = async (
-    request: FastifyRequest,
-    reply: FastifyReply,
-  ): Promise<void> => {
+  const requireBridgeAuth = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const token = bearerToken(headerValue(request.headers.authorization))
     if (token === undefined || !verifyToken(token, deps.config.bridgeSecret)) {
       reply.code(401).send({ error: 'unauthorized' })
     }
   }
 
-  const transcribeErrorHandler = (
+  const audioBodyErrorHandler = (
     error: FastifyError,
     _request: FastifyRequest,
     reply: FastifyReply,
@@ -127,12 +133,87 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
     return reply.code(error.statusCode ?? 500).send({ error: 'internal_error' })
   }
 
+  app.post<{ Params: { sessionId: string } }>(
+    '/api/sessions/:sessionId/audio',
+    {
+      bodyLimit: deps.config.sttMaxBytes,
+      onRequest: requireBridgeAuth,
+      errorHandler: audioBodyErrorHandler,
+    },
+    async (request, reply) => {
+      const sessionId = request.params.sessionId
+      const session = await deps.repo.get(sessionId)
+      if (session === undefined) {
+        return reply.code(404).send({ error: 'session_not_found' })
+      }
+
+      const mediaType = mediaTypeOf(headerValue(request.headers['content-type']))
+      if (!ACCEPTED_AUDIO_TYPES.has(mediaType)) {
+        return reply.code(415).send({ error: 'unsupported_audio' })
+      }
+
+      const body = request.body
+      if (!Buffer.isBuffer(body) || body.byteLength === 0) {
+        return reply.code(400).send({ error: 'audio_empty' })
+      }
+
+      const durationMs = durationFromHeader(headerValue(request.headers['x-audio-duration-ms']))
+      if (durationMs !== undefined && durationMs > deps.config.sttMaxDurationMs) {
+        return reply.code(400).send({ error: 'audio_too_long' })
+      }
+
+      const playback =
+        deps.transcoder === undefined
+          ? { data: body, mimeType: mediaType, transcoded: false }
+          : await deps.transcoder.transcode({ data: body, mimeType: mediaType })
+      const id = randomUUID()
+      const resolvedDurationMs = durationMs ?? 0
+
+      await deps.repo.insertAudio({
+        id,
+        sessionId,
+        mimeType: mediaType,
+        playbackMimeType: playback.mimeType,
+        durationMs: resolvedDurationMs,
+        sizeBytes: body.byteLength,
+        original: body,
+        playback: playback.data,
+        createdAt: Date.now(),
+      })
+
+      return reply.code(201).send({
+        id,
+        mimeType: mediaType,
+        playbackMimeType: playback.mimeType,
+        durationMs: resolvedDurationMs,
+        sizeBytes: body.byteLength,
+      })
+    },
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/audio/:id',
+    { onRequest: requireBridgeAuth },
+    async (request, reply) => {
+      const audio = await deps.repo.getAudio(request.params.id)
+      if (audio === undefined) {
+        return reply.code(404).send({ error: 'audio_not_found' })
+      }
+
+      return reply
+        .header('Content-Type', audio.playbackMimeType)
+        .header('Content-Length', String(audio.playback.byteLength))
+        .header('Cache-Control', 'private, max-age=86400')
+        .send(audio.playback)
+    },
+  )
+
   app.post(
     '/api/transcribe',
     {
       bodyLimit: deps.config.sttMaxBytes,
-      onRequest: requireTranscribeAuth,
-      errorHandler: transcribeErrorHandler,
+      onRequest: requireBridgeAuth,
+      errorHandler: audioBodyErrorHandler,
     },
     async (request, reply) => {
       if (!deps.config.sttEnabled || deps.stt === undefined) {
@@ -149,11 +230,7 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         return reply.code(400).send({ error: 'audio_empty' })
       }
 
-      const rawDuration = headerValue(request.headers['x-audio-duration-ms'])
-      const parsedDuration =
-        rawDuration === undefined ? Number.NaN : Number.parseInt(rawDuration, 10)
-      const durationMs =
-        Number.isFinite(parsedDuration) && parsedDuration >= 0 ? parsedDuration : undefined
+      const durationMs = durationFromHeader(headerValue(request.headers['x-audio-duration-ms']))
       if (durationMs !== undefined && durationMs > deps.config.sttMaxDurationMs) {
         return reply.code(400).send({ error: 'audio_too_long' })
       }

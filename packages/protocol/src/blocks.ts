@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { imageRefSchema } from './entities'
+import { audioAttachmentSchema, imageRefSchema } from './entities'
 
 export const toolCallStatusSchema = z.enum(['pending', 'in_progress', 'completed', 'failed'])
 export type ToolCallStatus = z.infer<typeof toolCallStatusSchema>
@@ -10,6 +10,8 @@ export const messageBlockSchema = z.object({
   role: z.enum(['user', 'assistant']),
   text: z.string(),
   images: z.array(imageRefSchema).optional(),
+  /** One voice clip attached to this user message; audio bytes are fetched separately. */
+  audio: audioAttachmentSchema.optional(),
   messageId: z.string().optional(),
   streaming: z.boolean().optional(),
   seq: z.number().int().nonnegative().optional(),

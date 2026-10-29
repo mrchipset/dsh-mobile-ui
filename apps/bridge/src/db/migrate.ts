@@ -1,10 +1,18 @@
 import { readFileSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 
-const INITIAL_VERSION = 1
+interface Migration {
+  version: number
+  file: string
+}
 
-function initialSql(): string {
-  return readFileSync(new URL('./migrations/0001_init.sql', import.meta.url), 'utf8')
+const MIGRATIONS: readonly Migration[] = [
+  { version: 1, file: '0001_init.sql' },
+  { version: 2, file: '0002_audio_attachments.sql' },
+]
+
+function migrationSql(file: string): string {
+  return readFileSync(new URL(`./migrations/${file}`, import.meta.url), 'utf8')
 }
 
 /**
@@ -12,14 +20,16 @@ function initialSql(): string {
  * WAL is skipped for in-memory databases, where it has no meaning.
  */
 export function migrate(db: Database.Database): void {
-  const current = db.pragma('user_version', { simple: true }) as number
-  if (current >= INITIAL_VERSION) return
+  let current = db.pragma('user_version', { simple: true }) as number
 
-  let sql = initialSql()
-  if (db.memory) {
-    sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL;?/i, '').trim()
+  for (const migration of MIGRATIONS) {
+    if (current >= migration.version) continue
+    let sql = migrationSql(migration.file)
+    if (db.memory && migration.version === 1) {
+      sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL;?/i, '').trim()
+    }
+    db.exec(sql)
+    db.pragma(`user_version = ${migration.version}`)
+    current = migration.version
   }
-
-  db.exec(sql)
-  db.pragma(`user_version = ${INITIAL_VERSION}`)
 }

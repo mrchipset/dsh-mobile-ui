@@ -1,4 +1,5 @@
 import type {
+  AudioAttachment,
   DeviceId,
   LeaseSnapshot,
   PromptReceipt,
@@ -7,6 +8,27 @@ import type {
   SessionSummary,
   StoredUpdate,
 } from '@dsh-mobile/protocol'
+
+export interface InsertAudioInput {
+  id: string
+  sessionId: SessionId
+  mimeType: string
+  playbackMimeType: string
+  durationMs: number
+  sizeBytes: number
+  original: Buffer
+  playback: Buffer
+  createdAt: number
+}
+
+export interface AudioRecord extends InsertAudioInput {
+  clientMsgId: string | null
+}
+
+export type AttachAudioResult =
+  | { status: 'ok'; attachment: AudioAttachment }
+  | { status: 'not_found' }
+  | { status: 'session_mismatch' }
 
 export interface SessionRepository {
   list(): Promise<SessionSummary[]>
@@ -18,6 +40,13 @@ export interface SessionRepository {
   lastSeq(id: SessionId): Promise<Seq>
   prune(id: SessionId, keep: number): Promise<void>
   rename(id: SessionId, title: string): Promise<void>
+  insertAudio(input: InsertAudioInput): Promise<void>
+  getAudio(id: string): Promise<AudioRecord | undefined>
+  attachAudioToPrompt(
+    audioId: string,
+    sessionId: SessionId,
+    clientMsgId: string,
+  ): Promise<AttachAudioResult>
 }
 
 export interface LeaseChange {

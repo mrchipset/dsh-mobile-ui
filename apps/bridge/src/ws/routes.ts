@@ -1,4 +1,5 @@
 import {
+  type AudioAttachment,
   type ClientMessage,
   clientMessageSchema,
   fold,
@@ -262,6 +263,26 @@ export function registerWsRoutes(app: FastifyInstance, deps: WsRouteDeps): WsHub
           throw new BridgeError('session_gone', 'Session not found', false)
         }
 
+        let audio: AudioAttachment | undefined
+        if (message.audioId !== undefined) {
+          const attached = await deps.repo.attachAudioToPrompt(
+            message.audioId,
+            message.sessionId,
+            message.clientMsgId,
+          )
+          if (attached.status === 'not_found') {
+            throw new BridgeError('audio_not_found', 'Audio attachment not found', false)
+          }
+          if (attached.status === 'session_mismatch') {
+            throw new BridgeError(
+              'audio_session_mismatch',
+              'Audio attachment belongs to another session',
+              false,
+            )
+          }
+          audio = attached.attachment
+        }
+
         const holder = await deps.lease.holder(message.sessionId)
         if (holder === null) {
           await deps.lease.take(message.sessionId, client.deviceId)
@@ -283,6 +304,7 @@ export function registerWsRoutes(app: FastifyInstance, deps: WsRouteDeps): WsHub
             sessionUpdate: 'user_message_chunk',
             messageId: message.clientMsgId,
             content: { type: 'text', text: message.text },
+            ...(audio === undefined ? {} : { audio }),
           }
           await deps.repo.append(message.sessionId, seq, 'user_message_chunk', payload)
           hub.broadcast(message.sessionId, {

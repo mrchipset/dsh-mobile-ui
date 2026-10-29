@@ -1,6 +1,11 @@
 import type { Seq, SessionId, SessionSummary, StoredUpdate } from '@dsh-mobile/protocol'
 import type Database from 'better-sqlite3'
-import type { SessionRepository } from '../ports.js'
+import type {
+  AttachAudioResult,
+  AudioRecord,
+  InsertAudioInput,
+  SessionRepository,
+} from '../ports.js'
 
 interface SessionRow {
   id: string
@@ -15,6 +20,22 @@ interface UpdateRow {
   seq: number
   kind: string
   payload: string
+  created_at: number
+}
+
+interface AudioMetaRow {
+  id: string
+  session_id: string
+  mime_type: string
+  playback_mime_type: string
+  duration_ms: number
+  size_bytes: number
+}
+
+interface AudioRow extends AudioMetaRow {
+  client_msg_id: string | null
+  original: Buffer
+  playback: Buffer
   created_at: number
 }
 
@@ -34,6 +55,21 @@ function parsePayload(payload: string): unknown {
     return JSON.parse(payload) as unknown
   } catch {
     return payload
+  }
+}
+
+function toAudioRecord(row: AudioRow): AudioRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    clientMsgId: row.client_msg_id,
+    mimeType: row.mime_type,
+    playbackMimeType: row.playback_mime_type,
+    durationMs: row.duration_ms,
+    sizeBytes: row.size_bytes,
+    original: Buffer.from(row.original),
+    playback: Buffer.from(row.playback),
+    createdAt: row.created_at,
   }
 }
 
@@ -161,5 +197,62 @@ export class SqliteSessionRepository implements SessionRepository {
 
   async rename(id: SessionId, title: string): Promise<void> {
     this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, id)
+  }
+
+  async insertAudio(input: InsertAudioInput): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO audio_attachments
+           (id, session_id, client_msg_id, mime_type, playback_mime_type, duration_ms,
+            size_bytes, original, playback, created_at)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.sessionId,
+        input.mimeType,
+        input.playbackMimeType,
+        input.durationMs,
+        input.sizeBytes,
+        input.original,
+        input.playback,
+        input.createdAt,
+      )
+  }
+
+  async getAudio(id: string): Promise<AudioRecord | undefined> {
+    const row = this.db.prepare('SELECT * FROM audio_attachments WHERE id = ?').get(id) as
+      | AudioRow
+      | undefined
+    return row === undefined ? undefined : toAudioRecord(row)
+  }
+
+  async attachAudioToPrompt(
+    audioId: string,
+    sessionId: SessionId,
+    clientMsgId: string,
+  ): Promise<AttachAudioResult> {
+    const row = this.db
+      .prepare(
+        `SELECT id, session_id, mime_type, playback_mime_type, duration_ms, size_bytes
+         FROM audio_attachments WHERE id = ?`,
+      )
+      .get(audioId) as AudioMetaRow | undefined
+    if (row === undefined) return { status: 'not_found' }
+    if (row.session_id !== sessionId) return { status: 'session_mismatch' }
+
+    this.db
+      .prepare('UPDATE audio_attachments SET client_msg_id = ? WHERE id = ?')
+      .run(clientMsgId, audioId)
+    return {
+      status: 'ok',
+      attachment: {
+        id: row.id,
+        mimeType: row.mime_type,
+        playbackMimeType: row.playback_mime_type,
+        durationMs: row.duration_ms,
+        sizeBytes: row.size_bytes,
+      },
+    }
   }
 }

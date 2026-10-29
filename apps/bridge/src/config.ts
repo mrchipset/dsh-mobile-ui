@@ -35,6 +35,7 @@ const envSchema = z.object({
   STT_MAX_DURATION_MS: positiveIntSchema.default(60000),
   STT_CONCURRENCY: positiveIntSchema.default(1),
   STT_API_KEY_ENV: z.string().min(1).optional(),
+  FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
 })
 
 export interface Config {
@@ -63,6 +64,7 @@ export interface Config {
   sttMaxDurationMs: number
   sttConcurrency: number
   sttApiKeyEnv?: string
+  ffmpegPath: string
 }
 
 /** Walk up until the workspace root so pnpm-filter cwd changes do not move data/. */
@@ -128,5 +130,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     sttMaxDurationMs: parsed.STT_MAX_DURATION_MS,
     sttConcurrency: parsed.STT_CONCURRENCY,
     ...(parsed.STT_API_KEY_ENV === undefined ? {} : { sttApiKeyEnv: parsed.STT_API_KEY_ENV }),
+    ffmpegPath: parsed.FFMPEG_PATH,
   }
 }
