@@ -24,12 +24,11 @@ export function migrate(db: Database.Database): void {
 
   for (const migration of MIGRATIONS) {
     if (current >= migration.version) continue
-    let sql = migrationSql(migration.file)
-    if (db.memory && migration.version === 1) {
-      sql = sql.replace(/PRAGMA\s+journal_mode\s*=\s*WAL;?/i, '').trim()
-    }
-    db.exec(sql)
-    db.pragma(`user_version = ${migration.version}`)
+    const sql = migrationSql(migration.file)
+    db.transaction(() => {
+      db.exec(sql)
+      db.pragma(`user_version = ${migration.version}`)
+    })()
     current = migration.version
   }
 }

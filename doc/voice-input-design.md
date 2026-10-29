@@ -167,13 +167,14 @@ Implement `OpenAICompatibleStt` with Node's built-in `fetch`, `FormData`, and `B
 
 ### Voice attachments
 
-- Upload: `POST /api/sessions/:sessionId/audio` with Bearer auth, a raw audio body, and `X-Audio-Duration-Ms`. It reuses the MIME allowlist and `STT_MAX_BYTES` / `STT_MAX_DURATION_MS` limits.
-- Storage keeps the original bytes plus an M4A/AAC playback copy. `FFMPEG_PATH` (default `ffmpeg`) transcodes with `-vn -c:a aac -b:a 64k -movflags +faststart`. If ffmpeg is unavailable, fails, times out, or writes no output, playback falls back to the original bytes and MIME type.
-- Upload responds `201` with `{ id, mimeType, playbackMimeType, durationMs, sizeBytes }`.
+- Upload: `POST /api/sessions/:sessionId/audio` with Bearer auth, a raw audio body, and the required `X-Audio-Duration-Ms`. It reuses the MIME allowlist and `STT_MAX_BYTES` / `STT_MAX_DURATION_MS` limits. Missing/invalid/oversized durations return `audio_duration_required` / `invalid_audio_duration` / `audio_too_long`; a missing session returns `session_gone`.
+- Storage keeps the original bytes plus an M4A/AAC playback copy. `FFMPEG_PATH` (default `ffmpeg`) transcodes with `-vn -c:a aac -b:a 64k -movflags +faststart`. Inputs already in `audio/mp4` / `audio/x-m4a` are copied without invoking ffmpeg. If ffmpeg is unavailable, fails, times out, or writes no output, playback falls back to the original bytes and MIME type.
+- Transcodes are capped by `AUDIO_TRANSCODE_CONCURRENCY`; saturation returns `429 { error: "audio_busy" }`. Upload responds `201` with `{ id, mimeType, playbackMimeType, durationMs, sizeBytes, transcoded }`; `transcoded: false` means the playback bytes are the original fallback.
+- `/health` reports `audio: { ffmpeg: boolean }` from a cached startup probe. It is diagnostics only; upload still works with fallback when ffmpeg is false.
 - Playback: `GET /api/audio/:id` with Bearer auth returns the playback BLOB, `Content-Type: playbackMimeType`, `Content-Length`, and `Cache-Control: private, max-age=86400`. Audio bytes never enter WS messages or snapshots.
-- Prompt integration: `session.prompt.audioId` must belong to the same session. The Bridge marks `client_msg_id`, then writes `audio` metadata into the synthetic `user_message_chunk`. Unknown or cross-session IDs reject with `audio_not_found` / `audio_session_mismatch` before ACP.
-- `fold` projects persisted `payload.audio` into `MessageBlock.audio`. The `audio_attachments` table stores metadata and both BLOBs, with an index on `(session_id, created_at)` and FK cascade on session delete.
-- The v1 limitation is that audio uploaded for a prompt that is never sent remains until a future TTL cleanup.
+- Prompt integration: `session.prompt.audioId` must belong to the same session. The Bridge validates without mutation, calls `assertWriter`, then marks `client_msg_id` only if it is null or already this client message. It then writes `audio` metadata into the synthetic `user_message_chunk`. Errors: `audio_not_found`, `audio_session_mismatch`, `audio_already_attached`; none reach ACP.
+- `fold` projects persisted `payload.audio` into `MessageBlock.audio`. Migrations are transactional, WAL is configured by `openDatabase` for file DBs, and `audio_attachments` stores metadata plus both BLOBs with an index on `(session_id, created_at)` and FK cascade.
+- Accepted v1 risks: upload is auth-only until the prompt writer check; `GET /api/audio/:id` is authenticated but not session-scoped; abandoned uploads have no TTL/GC; `Cache-Control: private` is intentional for fetch + object URLs.
 
 ## 6. Bridge configuration
 
@@ -191,6 +192,7 @@ STT_MAX_DURATION_MS=60000
 STT_CONCURRENCY=1
 # STT_API_KEY_ENV=STT_API_KEY
 FFMPEG_PATH=ffmpeg
+AUDIO_TRANSCODE_CONCURRENCY=1
 ```
 
 All deployment differences are environment configuration; no code changes are required to switch from local Docker to a LAN GPU machine.

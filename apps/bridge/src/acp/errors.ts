@@ -14,6 +14,7 @@ export type BridgeErrorCode =
   | 'permission_gone'
   | 'audio_not_found'
   | 'audio_session_mismatch'
+  | 'audio_already_attached'
 
 /** Error shape shared by the ACP supervisor, lease manager, and WS layer. */
 export class BridgeError extends Error {

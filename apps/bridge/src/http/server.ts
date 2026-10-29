@@ -50,8 +50,10 @@ function mediaTypeOf(header: string | undefined): string {
 
 function durationFromHeader(value: string | undefined): number | undefined {
   if (value === undefined) return undefined
-  const parsed = Number.parseInt(value, 10)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return undefined
+  const parsed = Number(trimmed)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined
 }
 
 export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): void {
@@ -78,6 +80,15 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
       }
     }
 
+    let ffmpeg = false
+    if (deps.transcoder !== undefined) {
+      try {
+        ffmpeg = await deps.transcoder.isAvailable()
+      } catch {
+        ffmpeg = false
+      }
+    }
+
     const body = {
       ok: dbState === 'ok',
       uptime: process.uptime(),
@@ -91,6 +102,7 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         model: deps.config.sttModel,
         reachable,
       },
+      audio: { ffmpeg },
     }
 
     return reply.code(dbState === 'ok' ? 200 : 503).send(body)
@@ -111,6 +123,7 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
   })
 
   let inFlight = 0
+  let transcodeInFlight = 0
 
   const requireBridgeAuth = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     const token = bearerToken(headerValue(request.headers.authorization))
@@ -130,6 +143,9 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         maxBytes: deps.config.sttMaxBytes,
       })
     }
+    if (error.code === 'FST_ERR_CTP_INVALID_MEDIA_TYPE' || error.statusCode === 415) {
+      return reply.code(415).send({ error: 'unsupported_audio' })
+    }
     return reply.code(error.statusCode ?? 500).send({ error: 'internal_error' })
   }
 
@@ -144,7 +160,7 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
       const sessionId = request.params.sessionId
       const session = await deps.repo.get(sessionId)
       if (session === undefined) {
-        return reply.code(404).send({ error: 'session_not_found' })
+        return reply.code(404).send({ error: 'session_gone' })
       }
 
       const mediaType = mediaTypeOf(headerValue(request.headers['content-type']))
@@ -157,24 +173,41 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         return reply.code(400).send({ error: 'audio_empty' })
       }
 
-      const durationMs = durationFromHeader(headerValue(request.headers['x-audio-duration-ms']))
-      if (durationMs !== undefined && durationMs > deps.config.sttMaxDurationMs) {
+      const rawDuration = headerValue(request.headers['x-audio-duration-ms'])
+      if (rawDuration === undefined || rawDuration.trim() === '') {
+        return reply.code(400).send({ error: 'audio_duration_required' })
+      }
+      const durationMs = durationFromHeader(rawDuration)
+      if (durationMs === undefined) {
+        return reply.code(400).send({ error: 'invalid_audio_duration' })
+      }
+      if (durationMs > deps.config.sttMaxDurationMs) {
         return reply.code(400).send({ error: 'audio_too_long' })
       }
 
-      const playback =
-        deps.transcoder === undefined
-          ? { data: body, mimeType: mediaType, transcoded: false }
-          : await deps.transcoder.transcode({ data: body, mimeType: mediaType })
+      let playback: { data: Buffer; mimeType: string; transcoded: boolean }
+      const alreadyPlayable = mediaType === 'audio/mp4' || mediaType === 'audio/x-m4a'
+      if (alreadyPlayable || deps.transcoder === undefined) {
+        playback = { data: body, mimeType: mediaType, transcoded: false }
+      } else {
+        if (transcodeInFlight >= deps.config.audioTranscodeConcurrency) {
+          return reply.code(429).send({ error: 'audio_busy' })
+        }
+        transcodeInFlight += 1
+        try {
+          playback = await deps.transcoder.transcode({ data: body, mimeType: mediaType })
+        } finally {
+          transcodeInFlight -= 1
+        }
+      }
       const id = randomUUID()
-      const resolvedDurationMs = durationMs ?? 0
 
       await deps.repo.insertAudio({
         id,
         sessionId,
         mimeType: mediaType,
         playbackMimeType: playback.mimeType,
-        durationMs: resolvedDurationMs,
+        durationMs,
         sizeBytes: body.byteLength,
         original: body,
         playback: playback.data,
@@ -185,8 +218,9 @@ export function registerHttpRoutes(app: FastifyInstance, deps: HttpRouteDeps): v
         id,
         mimeType: mediaType,
         playbackMimeType: playback.mimeType,
-        durationMs: resolvedDurationMs,
+        durationMs,
         sizeBytes: body.byteLength,
+        transcoded: playback.transcoded,
       })
     },
   )

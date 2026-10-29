@@ -18,6 +18,7 @@ export interface AudioTranscodeResult {
 /** Normalizes an accepted browser recording to an M4A/AAC playback copy. */
 export interface AudioTranscoder {
   transcode(input: AudioTranscodeInput): Promise<AudioTranscodeResult>
+  isAvailable(): Promise<boolean>
 }
 
 export interface FfmpegTranscoderOptions {
@@ -54,9 +55,17 @@ function extensionForMime(mimeType: string): string {
  */
 export class FfmpegTranscoder implements AudioTranscoder {
   private readonly timeoutMs: number
+  private available: Promise<boolean> | undefined
 
   constructor(private readonly options: FfmpegTranscoderOptions) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    // Warm the probe so /health does not pay for the first spawn.
+    void this.isAvailable()
+  }
+
+  isAvailable(): Promise<boolean> {
+    this.available ??= this.checkAvailable()
+    return this.available
   }
 
   async transcode(input: AudioTranscodeInput): Promise<AudioTranscodeResult> {
@@ -93,20 +102,47 @@ export class FfmpegTranscoder implements AudioTranscoder {
       )
       return fallback
     } finally {
-      if (directory !== undefined) {
-        await rm(directory, { recursive: true, force: true }).catch(() => {})
-      }
+      if (directory !== undefined) await removeDirectory(directory)
     }
+  }
+
+  private checkAvailable(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false
+      let timer: NodeJS.Timeout | undefined
+      const finish = (available: boolean): void => {
+        if (settled) return
+        settled = true
+        if (timer !== undefined) clearTimeout(timer)
+        resolve(available)
+      }
+
+      const child = spawn(this.options.ffmpegPath, ['-version'], { stdio: 'ignore' })
+      timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          // Already exited.
+        }
+        finish(false)
+      }, 2000)
+      timer.unref?.()
+
+      child.once('error', () => finish(false))
+      child.once('close', (code) => finish(code === 0))
+    })
   }
 
   private runFfmpeg(inputPath: string, outputPath: string): Promise<number> {
     return new Promise((resolve) => {
       let settled = false
       let timer: NodeJS.Timeout | undefined
+      let hardDeadline: NodeJS.Timeout | undefined
       const finish = (code: number): void => {
         if (settled) return
         settled = true
         if (timer !== undefined) clearTimeout(timer)
+        if (hardDeadline !== undefined) clearTimeout(hardDeadline)
         resolve(code)
       }
 
@@ -134,12 +170,32 @@ export class FfmpegTranscoder implements AudioTranscoder {
         } catch {
           // Already exited.
         }
-        finish(1)
+        // Give the child a bounded chance to close before temp cleanup.
+        hardDeadline = setTimeout(() => finish(1), 2000)
+        hardDeadline.unref?.()
       }, this.timeoutMs)
       timer.unref?.()
 
       child.once('error', () => finish(1))
       child.once('close', (code) => finish(code ?? 1))
     })
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    timer.unref?.()
+  })
+}
+
+async function removeDirectory(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await rm(directory, { recursive: true, force: true })
+      return
+    } catch {
+      if (attempt < 2) await delay(50)
+    }
   }
 }

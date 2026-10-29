@@ -2,6 +2,7 @@ import type { Seq, SessionId, SessionSummary, StoredUpdate } from '@dsh-mobile/p
 import type Database from 'better-sqlite3'
 import type {
   AttachAudioResult,
+  AudioAttachmentInfo,
   AudioRecord,
   InsertAudioInput,
   SessionRepository,
@@ -26,6 +27,7 @@ interface UpdateRow {
 interface AudioMetaRow {
   id: string
   session_id: string
+  client_msg_id: string | null
   mime_type: string
   playback_mime_type: string
   duration_ms: number
@@ -33,7 +35,6 @@ interface AudioMetaRow {
 }
 
 interface AudioRow extends AudioMetaRow {
-  client_msg_id: string | null
   original: Buffer
   playback: Buffer
   created_at: number
@@ -55,6 +56,18 @@ function parsePayload(payload: string): unknown {
     return JSON.parse(payload) as unknown
   } catch {
     return payload
+  }
+}
+
+function toAttachment(row: AudioMetaRow): AudioAttachmentInfo {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    clientMsgId: row.client_msg_id,
+    mimeType: row.mime_type,
+    playbackMimeType: row.playback_mime_type,
+    durationMs: row.duration_ms,
+    sizeBytes: row.size_bytes,
   }
 }
 
@@ -227,31 +240,44 @@ export class SqliteSessionRepository implements SessionRepository {
     return row === undefined ? undefined : toAudioRecord(row)
   }
 
+  async getAudioAttachment(id: string): Promise<AudioAttachmentInfo | undefined> {
+    const row = this.db
+      .prepare(
+        `SELECT id, session_id, client_msg_id, mime_type, playback_mime_type, duration_ms, size_bytes
+         FROM audio_attachments WHERE id = ?`,
+      )
+      .get(id) as AudioMetaRow | undefined
+    return row === undefined ? undefined : toAttachment(row)
+  }
+
   async attachAudioToPrompt(
     audioId: string,
     sessionId: SessionId,
     clientMsgId: string,
   ): Promise<AttachAudioResult> {
-    const row = this.db
-      .prepare(
-        `SELECT id, session_id, mime_type, playback_mime_type, duration_ms, size_bytes
-         FROM audio_attachments WHERE id = ?`,
-      )
-      .get(audioId) as AudioMetaRow | undefined
+    const row = await this.getAudioAttachment(audioId)
     if (row === undefined) return { status: 'not_found' }
-    if (row.session_id !== sessionId) return { status: 'session_mismatch' }
+    if (row.sessionId !== sessionId) return { status: 'session_mismatch' }
+    if (row.clientMsgId !== null && row.clientMsgId !== clientMsgId) {
+      return { status: 'already_attached' }
+    }
 
-    this.db
-      .prepare('UPDATE audio_attachments SET client_msg_id = ? WHERE id = ?')
-      .run(clientMsgId, audioId)
+    const result = this.db
+      .prepare(
+        `UPDATE audio_attachments SET client_msg_id = ?
+         WHERE id = ? AND (client_msg_id IS NULL OR client_msg_id = ?)`,
+      )
+      .run(clientMsgId, audioId, clientMsgId)
+    if (result.changes === 0) return { status: 'already_attached' }
+
     return {
       status: 'ok',
       attachment: {
         id: row.id,
-        mimeType: row.mime_type,
-        playbackMimeType: row.playback_mime_type,
-        durationMs: row.duration_ms,
-        sizeBytes: row.size_bytes,
+        mimeType: row.mimeType,
+        playbackMimeType: row.playbackMimeType,
+        durationMs: row.durationMs,
+        sizeBytes: row.sizeBytes,
       },
     }
   }

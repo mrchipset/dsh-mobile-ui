@@ -2,8 +2,9 @@
 
 - Date: 2026-10-28
 - Scope: `packages/protocol`, `apps/bridge`, `.env.example`, design doc
-- Status: Phase 1 (protocol + Bridge) implemented; mobile playback is Phase 2
+- Status: Phase 1 + Oracle #1 remediation; mobile playback is Phase 2
 ## Context
+
 
 A voice prompt currently persists only the transcript. Replaying it requires
 storing the clip, serving it to authenticated devices, and linking one attachment.
@@ -16,45 +17,44 @@ storing the clip, serving it to authenticated devices, and linking one attachmen
 
 ## Decision
 
-- Protocol adds `AudioAttachment`, `MessageBlock.audio`, and optional
-  `session.prompt.audioId`. Audio bytes never travel over WS or snapshots.
-- Migration `0002_audio_attachments.sql` stores both BLOBs, metadata, nullable
-  `client_msg_id`, a `(session_id, created_at)` index, and FK cascade. The runner
-  applies 0001 then 0002 and advances `user_version` to 2.
-- `POST /api/sessions/:sessionId/audio` uses the existing Bearer check, raw
-  `audio/*` parser, MIME allowlist, `STT_MAX_BYTES`, and `STT_MAX_DURATION_MS`.
-  It returns `201` with `{ id, mimeType, playbackMimeType, durationMs, sizeBytes }`.
+- Protocol adds `AudioAttachment`, `MessageBlock.audio`, `session.prompt.audioId`, and `PromptInput.audioId`; audio bytes never use WS.
+- Migration `0002` stores both BLOBs, metadata, nullable `client_msg_id`, index, and FK cascade. WAL lives in `openDatabase`; each migration + `user_version` is one transaction.
+- `POST /api/sessions/:sessionId/audio` requires Bearer auth and duration, enforces limits, and returns `201` with `{ id, mimeType, playbackMimeType, durationMs, sizeBytes, transcoded }`.
+  Missing sessions use `session_gone`; invalid media maps to `unsupported_audio`.
+- `FfmpegTranscoder` renders AAC in M4A via `FFMPEG_PATH`; M4A inputs are copied
+  without spawning ffmpeg. Missing/failed/timeout ffmpeg falls back to original
+  bytes/MIME. `AUDIO_TRANSCODE_CONCURRENCY` caps work and returns `audio_busy`.
 - `GET /api/audio/:id` requires Bearer auth and serves only the playback BLOB with
   `Content-Type`, `Content-Length`, and `Cache-Control: private, max-age=86400`.
-- `FfmpegTranscoder` renders AAC in M4A (`-vn -c:a aac -b:a 64k -movflags
-  +faststart`) via `FFMPEG_PATH`. Missing/failed/timed-out ffmpeg falls back to
-  the original bytes and MIME; temp files are always removed and no audio or
-  full paths are logged.
-- `session.prompt` verifies the audio's session, marks `client_msg_id`, and adds
-  metadata to the synthetic `user_message_chunk`. Unknown or cross-session IDs
-  fail with `audio_not_found` / `audio_session_mismatch` before ACP. `fold`
-  preserves the metadata across user chunk merges.
+- `session.prompt` validates audio existence/session without mutation, calls
+  `assertWriter`, then marks `client_msg_id` only if null or matching. Different
+  prompts get `audio_already_attached`; `fold` preserves audio on user messages.
+- `/health` reports cached `audio.ffmpeg` availability.
 
 ## Tradeoffs / risks
 
 - BLOBs live in SQLite, so each clip is stored twice (original + playback).
-- If ffmpeg is unavailable, the fallback may not play on every iPhone browser.
-- Unused uploads from failed/abandoned sends are not garbage-collected yet.
-- Only one audio attachment per prompt is supported by the schema and UI plan.
+- Accepted v1 risks: upload is auth-only until the prompt writer check; playback
+  GET is authenticated but not session-scoped; abandoned uploads have no TTL/GC;
+  `Cache-Control: private` is intentional for fetch + object URLs.
+- If ffmpeg is unavailable, fallback playback may not work on every iPhone browser.
+- Only one audio attachment per prompt is supported.
 
 ## Verification
 
 - `pnpm exec tsc -p packages/protocol/tsconfig.json --noEmit`
 - `pnpm exec tsc -p apps/bridge/tsconfig.json --noEmit`
-- `pnpm exec vitest run packages/protocol apps/bridge` — 14 files / 88 tests
+- `pnpm exec vitest run packages/protocol apps/bridge` — 14 files / 95 tests
+- Real ffmpeg success (tiny WAV → M4A) and corrupt-input fallback tests ran here.
 - `pnpm --filter @dsh-mobile/bridge build`
+- `pnpm test` — 17 files / 119 tests
 - `pnpm exec biome check packages/protocol apps/bridge`
 
-No real ffmpeg run was required; tests use a fake transcoder and the unavailable
-ffmpeg fallback. No mobile UI, Vite, Bridge, DSH, or Docker process was started.
+No mobile UI, Vite, Bridge, DSH, or Docker process was started.
 
 ## Follow-ups
 
-- Mobile: upload on send, preview/remove pending audio, fetch/replay from messages.
-- Add orphan-audio TTL cleanup and consider a size/count budget.
-- Verify real webm and m4a recordings through host ffmpeg and on physical phones.
+- Phase 2: upload on send, preview/remove pending audio, fetch/replay from messages.
+- Add orphan-audio TTL cleanup and a dedicated timeout test with a controllable
+  hanging ffmpeg; real-time timeout is currently covered only by code review.
+- Verify real phone playback and consider session-scoped playback authorization.

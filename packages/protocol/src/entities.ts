@@ -62,8 +62,8 @@ export type ImageRef = z.infer<typeof imageRefSchema>
 
 export const audioAttachmentSchema = z.object({
   id: z.string().min(1).max(64),
-  mimeType: z.string().min(1),
-  playbackMimeType: z.string().min(1),
+  mimeType: z.string().min(1).max(64),
+  playbackMimeType: z.string().min(1).max(64),
   durationMs: z.number().int().nonnegative(),
   sizeBytes: z.number().int().nonnegative(),
 })

@@ -32,6 +32,7 @@ describe('loadConfig', () => {
     expect(config.sttConcurrency).toBe(1)
     expect(config.sttApiKeyEnv).toBeUndefined()
     expect(config.ffmpegPath).toBe('ffmpeg')
+    expect(config.audioTranscodeConcurrency).toBe(1)
   })
 
   it('parses STT overrides', () => {
@@ -48,9 +49,11 @@ describe('loadConfig', () => {
       STT_CONCURRENCY: '2',
       STT_API_KEY_ENV: 'STT_API_KEY',
       FFMPEG_PATH: 'C:/tools/ffmpeg.exe',
+      AUDIO_TRANSCODE_CONCURRENCY: '2',
     } as NodeJS.ProcessEnv)
 
     expect(config.ffmpegPath).toBe('C:/tools/ffmpeg.exe')
+    expect(config.audioTranscodeConcurrency).toBe(2)
     expect(config.sttEnabled).toBe(true)
     expect(config.sttBaseUrl).toBe('http://192.168.1.50:8000/v1')
     expect(config.sttModel).toBe('paraformer-int8')

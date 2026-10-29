@@ -175,6 +175,21 @@ describe('session.prompt audio attachment', () => {
       JSON.stringify({
         type: 'session.prompt',
         sessionId: 's1',
+        clientMsgId: 'c1b',
+        text: 'reuse audio',
+        audioId: 'a1',
+      }),
+    )
+    expect(await messages.nextType('error')).toMatchObject({
+      type: 'error',
+      code: 'audio_already_attached',
+    })
+    expect(promptCalls).toBe(1)
+
+    socket.send(
+      JSON.stringify({
+        type: 'session.prompt',
+        sessionId: 's1',
         clientMsgId: 'c2',
         text: 'cross session',
         audioId: 'a2',
@@ -214,5 +229,65 @@ describe('session.prompt audio attachment', () => {
     expect(promptCalls).toBe(2)
 
     socket.close()
+  })
+
+  it('does not attach audio when a non-writer sends the prompt', async () => {
+    const config = loadConfig({
+      BRIDGE_SECRET: secret,
+      ACP_ENABLED: 'false',
+    } as NodeJS.ProcessEnv)
+    const opened = openDatabase({ ...config, dbPath: ':memory:' })
+    const lease = new LeaseManager({ graceMs: config.leaseGraceMs })
+    let promptCalls = 0
+    const app = buildApp({
+      config,
+      repo: opened.repo,
+      lease,
+      supervisor: fakeSupervisor(() => {
+        promptCalls += 1
+      }),
+      logger: createLogger('silent'),
+    })
+    active = { app, opened, lease }
+
+    await opened.repo.upsert(summary('s1'))
+    await audio(opened.repo, 'a1', 's1')
+
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const address = app.server.address() as AddressInfo
+    const writer = new WebSocket(`ws://127.0.0.1:${address.port}/ws`)
+    await once(writer, 'open')
+    const writerMessages = new MessageQueue(writer)
+    writer.send(JSON.stringify({ type: 'auth', token: secret, deviceId: 'writer' }))
+    await writerMessages.nextType('ready')
+    writer.send(JSON.stringify({ type: 'session.attach', sessionId: 's1' }))
+    await writerMessages.nextType('session.snapshot')
+    writer.send(JSON.stringify({ type: 'session.lease', sessionId: 's1', action: 'take' }))
+    await writerMessages.nextType('session.lease')
+
+    const other = new WebSocket(`ws://127.0.0.1:${address.port}/ws`)
+    await once(other, 'open')
+    const otherMessages = new MessageQueue(other)
+    other.send(JSON.stringify({ type: 'auth', token: secret, deviceId: 'other' }))
+    await otherMessages.nextType('ready')
+    other.send(
+      JSON.stringify({
+        type: 'session.prompt',
+        sessionId: 's1',
+        clientMsgId: 'c-other',
+        text: 'should not attach',
+        audioId: 'a1',
+      }),
+    )
+
+    expect(await otherMessages.nextType('error')).toMatchObject({
+      type: 'error',
+      code: 'lease_held',
+    })
+    expect(promptCalls).toBe(0)
+    expect((await opened.repo.getAudioAttachment('a1'))?.clientMsgId).toBeNull()
+
+    writer.close()
+    other.close()
   })
 })

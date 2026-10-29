@@ -25,8 +25,14 @@ export interface AudioRecord extends InsertAudioInput {
   clientMsgId: string | null
 }
 
+export interface AudioAttachmentInfo extends AudioAttachment {
+  sessionId: SessionId
+  clientMsgId: string | null
+}
+
 export type AttachAudioResult =
   | { status: 'ok'; attachment: AudioAttachment }
+  | { status: 'already_attached' }
   | { status: 'not_found' }
   | { status: 'session_mismatch' }
 
@@ -42,6 +48,7 @@ export interface SessionRepository {
   rename(id: SessionId, title: string): Promise<void>
   insertAudio(input: InsertAudioInput): Promise<void>
   getAudio(id: string): Promise<AudioRecord | undefined>
+  getAudioAttachment(id: string): Promise<AudioAttachmentInfo | undefined>
   attachAudioToPrompt(
     audioId: string,
     sessionId: SessionId,

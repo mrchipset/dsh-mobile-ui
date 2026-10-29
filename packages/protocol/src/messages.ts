@@ -208,4 +208,5 @@ export interface PromptInput {
   clientMsgId: string
   text: string
   images?: Array<{ mimeType: string; data: string }>
+  audioId?: string
 }

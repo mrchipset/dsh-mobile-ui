@@ -1,6 +1,3 @@
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-
 CREATE TABLE sessions (
   id              TEXT PRIMARY KEY,
   title           TEXT,

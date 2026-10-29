@@ -263,6 +263,27 @@ export function registerWsRoutes(app: FastifyInstance, deps: WsRouteDeps): WsHub
           throw new BridgeError('session_gone', 'Session not found', false)
         }
 
+        if (message.audioId !== undefined) {
+          const audioInfo = await deps.repo.getAudioAttachment(message.audioId)
+          if (audioInfo === undefined) {
+            throw new BridgeError('audio_not_found', 'Audio attachment not found', false)
+          }
+          if (audioInfo.sessionId !== message.sessionId) {
+            throw new BridgeError(
+              'audio_session_mismatch',
+              'Audio attachment belongs to another session',
+              false,
+            )
+          }
+        }
+
+        const holder = await deps.lease.holder(message.sessionId)
+        if (holder === null) {
+          await deps.lease.take(message.sessionId, client.deviceId)
+        } else {
+          await deps.lease.assertWriter(message.sessionId, client.deviceId)
+        }
+
         let audio: AudioAttachment | undefined
         if (message.audioId !== undefined) {
           const attached = await deps.repo.attachAudioToPrompt(
@@ -280,14 +301,14 @@ export function registerWsRoutes(app: FastifyInstance, deps: WsRouteDeps): WsHub
               false,
             )
           }
+          if (attached.status === 'already_attached') {
+            throw new BridgeError(
+              'audio_already_attached',
+              'Audio attachment is already attached to another prompt',
+              false,
+            )
+          }
           audio = attached.attachment
-        }
-
-        const holder = await deps.lease.holder(message.sessionId)
-        if (holder === null) {
-          await deps.lease.take(message.sessionId, client.deviceId)
-        } else {
-          await deps.lease.assertWriter(message.sessionId, client.deviceId)
         }
 
         promptKeys.set(dedupeKey, true)

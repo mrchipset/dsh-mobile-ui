@@ -70,6 +70,37 @@ describe('migrations and repository', () => {
     db.close()
   })
 
+  it('rolls back a failed migration and can retry after the conflict is removed', () => {
+    const db = new Database(':memory:')
+    db.exec(`
+      CREATE TABLE sessions (id TEXT PRIMARY KEY);
+      PRAGMA user_version = 1;
+      CREATE INDEX idx_audio_attachments_session_created ON sessions(id);
+    `)
+
+    expect(() => migrate(db)).toThrow()
+    expect(db.pragma('user_version', { simple: true })).toBe(1)
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audio_attachments'",
+        )
+        .get(),
+    ).toBeUndefined()
+
+    db.exec('DROP INDEX idx_audio_attachments_session_created')
+    migrate(db)
+    expect(db.pragma('user_version', { simple: true })).toBe(2)
+    expect(
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'audio_attachments'",
+        )
+        .get(),
+    ).toBeDefined()
+    db.close()
+  })
+
   it('allocates sequences, appends, reads ranges, and prunes', async () => {
     opened = memoryDb()
     const repo = opened.repo
@@ -138,6 +169,11 @@ describe('migrations and repository', () => {
     expect(stored?.original.equals(Buffer.from('ORIG'))).toBe(true)
     expect(stored?.playback.equals(Buffer.from('M4A'))).toBe(true)
     expect(stored?.clientMsgId).toBeNull()
+    expect(await repo.getAudioAttachment('a1')).toMatchObject({
+      sessionId: 's1',
+      clientMsgId: null,
+      id: 'a1',
+    })
 
     expect(await repo.attachAudioToPrompt('missing', 's1', 'c1')).toEqual({ status: 'not_found' })
     expect(await repo.attachAudioToPrompt('a1', 's2', 'c1')).toEqual({
@@ -157,6 +193,10 @@ describe('migrations and repository', () => {
       },
     })
     expect((await repo.getAudio('a1'))?.clientMsgId).toBe('c1')
+    expect(await repo.attachAudioToPrompt('a1', 's1', 'c1')).toMatchObject({ status: 'ok' })
+    expect(await repo.attachAudioToPrompt('a1', 's1', 'c2')).toEqual({
+      status: 'already_attached',
+    })
 
     opened.db.prepare('DELETE FROM sessions WHERE id = ?').run('s1')
     expect(await repo.getAudio('a1')).toBeUndefined()

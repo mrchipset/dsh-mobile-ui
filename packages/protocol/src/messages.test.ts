@@ -69,6 +69,15 @@ describe('audio attachment protocol', () => {
         sizeBytes: 4096,
       }).success,
     ).toBe(false)
+    expect(
+      audioAttachmentSchema.safeParse({
+        id: 'a1',
+        mimeType: 'x'.repeat(65),
+        playbackMimeType: 'audio/mp4',
+        durationMs: 1200,
+        sizeBytes: 4096,
+      }).success,
+    ).toBe(false)
   })
 })
 

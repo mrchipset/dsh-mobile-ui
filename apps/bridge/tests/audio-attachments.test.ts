@@ -12,9 +12,14 @@ import type { SessionRepository } from '../src/ports.js'
 const secret = 'correct-horse-battery'
 const audio = Buffer.from('ORIGINAL-AUDIO-BYTES')
 const playback = Buffer.from('PLAYBACK-M4A')
+let transcodeCalls = 0
 const transcoder: AudioTranscoder = {
   async transcode() {
+    transcodeCalls += 1
     return { data: playback, mimeType: 'audio/mp4', transcoded: true }
+  },
+  async isAvailable() {
+    return true
   },
 }
 
@@ -32,9 +37,13 @@ afterEach(async () => {
     active.repo.close()
     active = undefined
   }
+  transcodeCalls = 0
 })
 
-function makeHarness(env: Record<string, string> = {}, withTranscoder = true): Harness {
+function makeHarness(
+  env: Record<string, string> = {},
+  transcoderImpl: AudioTranscoder | null = transcoder,
+): Harness {
   const config = loadConfig({
     BRIDGE_SECRET: secret,
     ACP_ENABLED: 'false',
@@ -46,7 +55,7 @@ function makeHarness(env: Record<string, string> = {}, withTranscoder = true): H
     config,
     repo: opened.repo,
     lease,
-    ...(withTranscoder ? { transcoder } : {}),
+    ...(transcoderImpl === null ? {} : { transcoder: transcoderImpl }),
     logger: createLogger('silent'),
   })
   active = { app, repo: opened, lease }
@@ -95,7 +104,7 @@ describe('voice attachment HTTP API', () => {
       payload: audio,
     })
     expect(missingSession.statusCode).toBe(404)
-    expect(missingSession.json()).toEqual({ error: 'session_not_found' })
+    expect(missingSession.json()).toEqual({ error: 'session_gone' })
 
     const getNoAuth = await app.inject({ method: 'GET', url: '/api/audio/a1' })
     expect(getNoAuth.statusCode).toBe(401)
@@ -125,6 +134,7 @@ describe('voice attachment HTTP API', () => {
       playbackMimeType: 'audio/mp4',
       durationMs: 1200,
       sizeBytes: audio.byteLength,
+      transcoded: true,
     })
     expect(body.id.length).toBeGreaterThan(0)
 
@@ -154,7 +164,7 @@ describe('voice attachment HTTP API', () => {
   })
 
   it('keeps the original bytes when no transcoder is wired', async () => {
-    const { app, repo } = makeHarness({}, false)
+    const { app, repo } = makeHarness({}, null)
     await seedSession(repo)
 
     const response = await app.inject({
@@ -168,6 +178,7 @@ describe('voice attachment HTTP API', () => {
       mimeType: 'audio/webm',
       playbackMimeType: 'audio/webm',
       durationMs: 500,
+      transcoded: false,
     })
   })
 
@@ -194,6 +205,25 @@ describe('voice attachment HTTP API', () => {
       payload: Buffer.from('x'),
     })
     expect(unsupported.statusCode).toBe(415)
+    expect(unsupported.json()).toEqual({ error: 'unsupported_audio' })
+
+    const missingDuration = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/s1/audio',
+      headers: uploadHeaders(),
+      payload: Buffer.from('x'),
+    })
+    expect(missingDuration.statusCode).toBe(400)
+    expect(missingDuration.json()).toEqual({ error: 'audio_duration_required' })
+
+    const invalidDuration = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/s1/audio',
+      headers: uploadHeaders({ 'x-audio-duration-ms': 'soon' }),
+      payload: Buffer.from('x'),
+    })
+    expect(invalidDuration.statusCode).toBe(400)
+    expect(invalidDuration.json()).toEqual({ error: 'invalid_audio_duration' })
 
     const empty = await app.inject({
       method: 'POST',
@@ -212,5 +242,73 @@ describe('voice attachment HTTP API', () => {
     })
     expect(tooLong.statusCode).toBe(400)
     expect(tooLong.json()).toEqual({ error: 'audio_too_long' })
+  })
+
+  it('skips ffmpeg for already-playable M4A input', async () => {
+    const { app, repo } = makeHarness()
+    await seedSession(repo)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/sessions/s1/audio',
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'content-type': 'audio/x-m4a',
+        'x-audio-duration-ms': '800',
+      },
+      payload: audio,
+    })
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      playbackMimeType: 'audio/x-m4a',
+      transcoded: false,
+    })
+    expect(transcodeCalls).toBe(0)
+  })
+
+  it('returns 429 audio_busy while a transcode slot is occupied', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let markStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const slow: AudioTranscoder = {
+      async transcode() {
+        markStarted()
+        await gate
+        return { data: playback, mimeType: 'audio/mp4', transcoded: true }
+      },
+      async isAvailable() {
+        return true
+      },
+    }
+    const { app, repo } = makeHarness({ AUDIO_TRANSCODE_CONCURRENCY: '1' }, slow)
+    await seedSession(repo)
+
+    const first = app.inject({
+      method: 'POST',
+      url: '/api/sessions/s1/audio',
+      headers: uploadHeaders({ 'x-audio-duration-ms': '900' }),
+      payload: audio,
+    })
+    await started
+
+    try {
+      const second = await app.inject({
+        method: 'POST',
+        url: '/api/sessions/s1/audio',
+        headers: uploadHeaders({ 'x-audio-duration-ms': '900' }),
+        payload: audio,
+      })
+      expect(second.statusCode).toBe(429)
+      expect(second.json()).toEqual({ error: 'audio_busy' })
+    } finally {
+      release()
+      expect((await first).statusCode).toBe(201)
+    }
   })
 })

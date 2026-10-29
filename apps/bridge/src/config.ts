@@ -36,6 +36,7 @@ const envSchema = z.object({
   STT_CONCURRENCY: positiveIntSchema.default(1),
   STT_API_KEY_ENV: z.string().min(1).optional(),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
+  AUDIO_TRANSCODE_CONCURRENCY: positiveIntSchema.default(1),
 })
 
 export interface Config {
@@ -65,6 +66,7 @@ export interface Config {
   sttConcurrency: number
   sttApiKeyEnv?: string
   ffmpegPath: string
+  audioTranscodeConcurrency: number
 }
 
 /** Walk up until the workspace root so pnpm-filter cwd changes do not move data/. */
@@ -131,5 +133,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     sttConcurrency: parsed.STT_CONCURRENCY,
     ...(parsed.STT_API_KEY_ENV === undefined ? {} : { sttApiKeyEnv: parsed.STT_API_KEY_ENV }),
     ffmpegPath: parsed.FFMPEG_PATH,
+    audioTranscodeConcurrency: parsed.AUDIO_TRANSCODE_CONCURRENCY,
   }
 }
