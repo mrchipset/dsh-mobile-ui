@@ -1,0 +1,131 @@
+# Full deployment stack: STT + Bridge/DSH + Caddy web.
+#
+#   cd deploy
+#   cp .env.example .env   # fill BRIDGE_SECRET and GATEAWAY_API_KEY
+#   docker compose up -d --build
+#
+# The existing host Bridge/Vite/STT must be stopped first (ports/ACP collision).
+
+name: dsh-mobile
+
+services:
+  stt:
+    image: funasr-openai-api:cpu-2026-10
+    build:
+      context: ./stt
+      args:
+        PYTHON_IMAGE: ${STT_PYTHON_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
+        FUNASR_REPO: ${FUNASR_REPO:-https://github.com/modelscope/FunASR.git}
+        FUNASR_COMMIT: ${FUNASR_COMMIT:-d91d961e37a005837b1523bcc6b09f087877be54}
+        APT_MIRROR: ${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
+    restart: unless-stopped
+    volumes:
+      # Reuse the host-cached paraformer weights.
+      - ./stt/models:/root/.cache
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=3).read()"',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+    networks:
+      - app
+
+  bridge:
+    build:
+      context: ..
+      dockerfile: deploy/bridge/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        PNPM_VERSION: ${PNPM_VERSION:-10.25.0}
+        DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
+        APT_MIRROR: ${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
+    image: dsh-mobile-bridge:local
+    init: true
+    restart: unless-stopped
+    env_file:
+      # Contains BRIDGE_SECRET and GATEAWAY_API_KEY. Absent on a fresh checkout;
+      # required: false keeps `config` valid, but the container needs the file.
+      - path: .env
+        required: false
+    environment:
+      BRIDGE_PORT: "8787"
+      DSH_BIN: dsh
+      DSH_ARGS: '["--profile","acp"]'
+      DSH_HOME: /data/dsh
+      HOME: /data/dsh
+      WORKSPACE_ROOT: /workspace
+      DB_PATH: /data/bridge.db
+      STT_ENABLED: "true"
+      STT_BASE_URL: http://stt:8000/v1
+      STT_MODEL: paraformer
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    volumes:
+      - bridge-data:/data
+      - dsh-home:/data/dsh
+      # Named volume by default; set WORKSPACE_PATH=/host/path to bind-mount.
+      - ${WORKSPACE_PATH:-dsh-workspace}:/workspace
+    depends_on:
+      stt:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    networks:
+      - app
+      - gateway
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        PNPM_VERSION: ${PNPM_VERSION:-10.25.0}
+    image: dsh-mobile-web:local
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8443}:443"
+    volumes:
+      # Existing mkcert leaf cert; its SAN must include the phone-facing LAN IP.
+      - ../.certs:/certs:ro
+    depends_on:
+      bridge:
+        condition: service_healthy
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
+  # The gateway stack must already be running on this network.
+  gateway:
+    external: true
+    name: llm-gateaway_default
+
+volumes:
+  bridge-data:
+  dsh-home:
+  dsh-workspace:

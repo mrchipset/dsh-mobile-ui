@@ -1,0 +1,23 @@
+{
+	admin off
+	auto_https off
+}
+
+:443 {
+	tls /certs/dev-cert.pem /certs/dev-key.pem
+	encode zstd gzip
+	root * /srv
+
+	handle /api/* {
+		reverse_proxy bridge:8787
+	}
+
+	handle /ws* {
+		reverse_proxy bridge:8787
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

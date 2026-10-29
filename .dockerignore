@@ -1,0 +1,24 @@
+# Root build context for deploy/bridge and deploy/web.
+# Keep sources needed by the pnpm builds; exclude local state and secrets.
+
+.git
+.gitignore
+node_modules
+**/node_modules
+**/dist
+**/coverage
+data
+deploy/stt/models
+deploy/.env
+.env
+.env.local
+.env.*.local
+.certs
+.slim
+.playwright-mcp
+.vite
+.turbo
+*.log
+*.tsbuildinfo
+Thumbs.db
+.DS_Store
