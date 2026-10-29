@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createDemoWavBlob } from './audio'
 import {
   decideVoiceStop,
   isVoiceCancellable,
@@ -23,6 +24,7 @@ export interface UseVoiceRecorderOptions {
   demo: boolean
   transcribe: (clip: VoiceClip, signal: AbortSignal) => Promise<string>
   onTranscript: (text: string) => void
+  onClip?: (clip: VoiceClip) => void
   demoTranscript?: string
   maxDurationMs?: number
   minDurationMs?: number
@@ -104,9 +106,11 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
 
   const transcribeRef = useRef(options.transcribe)
   const onTranscriptRef = useRef(options.onTranscript)
+  const onClipRef = useRef(options.onClip)
   const demoTranscriptRef = useRef(options.demoTranscript ?? DEMO_VOICE_TRANSCRIPT)
   transcribeRef.current = options.transcribe
   onTranscriptRef.current = options.onTranscript
+  onClipRef.current = options.onClip
   demoTranscriptRef.current = options.demoTranscript ?? DEMO_VOICE_TRANSCRIPT
 
   const setVoiceState = useCallback((next: VoiceState): void => {
@@ -347,6 +351,13 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
     }
 
     if (demo) {
+      const clip: VoiceClip = {
+        blob: createDemoWavBlob(durationMs),
+        mimeType: 'audio/wav',
+        durationMs,
+        source: 'demo',
+      }
+      onClipRef.current?.(clip)
       setVoiceState('transcribing')
       setLevel(0)
       demoTimerRef.current = setTimeout(() => {
@@ -391,12 +402,14 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions): VoiceRecorde
         return
       }
 
-      void transcribeClip({
+      const clip: VoiceClip = {
         blob,
         mimeType,
         durationMs,
         source: 'microphone',
-      })
+      }
+      onClipRef.current?.(clip)
+      void transcribeClip(clip)
     }
 
     try {

@@ -27,6 +27,7 @@ import remarkGfm from 'remark-gfm'
 import { contentTexts, safeJson, truncate } from '../../lib/format'
 import { cn } from '../../lib/utils'
 import { Badge, type BadgeTone } from '../ui/Badge'
+import { MessageAudio } from './AudioAttachment'
 
 const MARKDOWN_COMPONENTS: Components = {
   a: ({ href, children }) => (
@@ -49,15 +50,23 @@ function Markdown({ text }: { text: string }) {
 function UserMessage({ block }: { block: MessageBlock }) {
   return (
     <article className="flex justify-end">
-      <div className="max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bubble px-4 py-3 text-[14px] leading-[1.65] text-bubble-ink shadow-bubble">
-        <p className="whitespace-pre-wrap break-words">{block.text}</p>
+      <div
+        className={cn(
+          'max-w-[86%] rounded-[21px] rounded-br-[7px] bg-bubble px-4 py-3 text-[14px] leading-[1.65] text-bubble-ink shadow-bubble',
+          block.audio !== undefined && 'min-w-[15rem]',
+        )}
+      >
+        {block.text.length > 0 ? (
+          <p className="whitespace-pre-wrap break-words">{block.text}</p>
+        ) : null}
+        {block.audio !== undefined ? <MessageAudio attachment={block.audio} /> : null}
         {block.images !== undefined && block.images.length > 0 ? (
           <div className="mt-2.5 grid grid-cols-2 gap-1.5">
             {block.images.map((image, index) => (
               <img
                 key={`${image.mimeType}-${String(image.data.length)}-${image.data.slice(0, 24)}`}
                 src={`data:${image.mimeType};base64,${image.data}`}
-                alt={`附件 ${index + 1}`}
+                alt={`图片 ${index + 1}`}
                 loading="lazy"
                 className="max-h-48 w-full rounded-xl object-cover"
               />

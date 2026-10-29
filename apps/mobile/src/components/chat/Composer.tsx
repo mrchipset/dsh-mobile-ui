@@ -4,9 +4,17 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useEffect,
   useRef,
   useState,
 } from 'react'
+import {
+  AudioError,
+  createDemoAudioMeta,
+  rememberAudioMeta,
+  type UploadedAudio,
+  uploadAudio,
+} from '../../lib/audio'
 import { SttError, transcribeAudio, useSttHealth } from '../../lib/stt'
 import { insertTranscript } from '../../lib/transcript'
 import { cn } from '../../lib/utils'
@@ -14,6 +22,7 @@ import { firstIssue, promptSchema } from '../../lib/validation'
 import { useVoiceRecorder, type VoiceClip } from '../../lib/voice-recorder'
 import { type AppMode, type StoreStatus, useBridgeStore } from '../../store/useBridgeStore'
 import { Spinner } from '../ui/Spinner'
+import { PendingAudioChip } from './AudioAttachment'
 import { VoiceBar } from './VoiceBar'
 
 interface ComposerProps {
@@ -23,10 +32,15 @@ interface ComposerProps {
   canPrompt: boolean
   cancelling: boolean
   permissionPending: boolean
-  onSend: (text: string) => boolean
+  onSend: (text: string, audioId?: string) => boolean
   onCancel: () => void
   onOpenLease: () => void
   onOpenPermission: () => void
+}
+
+interface PendingAudioState {
+  clip: VoiceClip
+  uploaded?: UploadedAudio
 }
 
 function voiceEnvironmentIssue(mode: AppMode): string | null {
@@ -57,10 +71,14 @@ export function Composer({
 }: ComposerProps) {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [pendingAudio, setPendingAudio] = useState<PendingAudioState | null>(null)
+  const [sending, setSending] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const draftRef = useRef('')
   const pointerHandledRef = useRef(false)
   const holdPointerRef = useRef<number | null>(null)
+  const uploadAbortRef = useRef<AbortController | null>(null)
   const authToken = useBridgeStore((state) => state.authToken)
 
   const connected = mode === 'demo' || status === 'ready'
@@ -69,6 +87,10 @@ export function Composer({
   // `active` drops during reconnect, so returning to ready re-probes STT health.
   const stt = useSttHealth({ active: mode === 'live' && status === 'ready', demo: mode === 'demo' })
 
+  useEffect(() => {
+    return () => uploadAbortRef.current?.abort()
+  }, [])
+
   function resizeTextarea() {
     const element = textareaRef.current
     if (element === null) return
@@ -76,25 +98,25 @@ export function Composer({
     element.style.height = `${String(Math.min(element.scrollHeight, 138))}px`
   }
 
-  function applyTranscript(text: string) {
-    const textarea = textareaRef.current
-    const insertion = insertTranscript(
-      draftRef.current,
-      text,
-      textarea?.selectionStart,
-      textarea?.selectionEnd,
-    )
-    if (insertion.value === draftRef.current && text.trim().length === 0) return
+  function handleClip(clip: VoiceClip) {
+    setPendingAudio({ clip })
+    setUploadError(null)
+  }
 
-    draftRef.current = insertion.value
-    setDraft(insertion.value)
+  function replaceDraft(text: string) {
+    const trimmed = text.trim()
+    if (trimmed.length === 0) return
+    const current = draftRef.current
+    const replacement = insertTranscript(current, trimmed, 0, current.length)
+    draftRef.current = replacement.value
+    setDraft(replacement.value)
     setError(null)
 
     requestAnimationFrame(() => {
       const target = textareaRef.current
       if (target === null) return
       target.focus()
-      target.setSelectionRange(insertion.caret, insertion.caret)
+      target.setSelectionRange(replacement.caret, replacement.caret)
       resizeTextarea()
     })
   }
@@ -119,14 +141,16 @@ export function Composer({
   const voice = useVoiceRecorder({
     demo: mode === 'demo',
     transcribe: transcribeClip,
-    onTranscript: applyTranscript,
+    onClip: handleClip,
+    onTranscript: replaceDraft,
   })
 
   const sttDisabled = mode !== 'demo' && stt.state.status === 'disabled'
   const sttUnavailable = mode !== 'demo' && stt.state.status === 'unavailable'
   const voiceBusy =
     voice.state === 'requesting' || voice.state === 'recording' || voice.state === 'transcribing'
-  const sendDisabled = !connected || !canPrompt || running || voiceBusy || draft.trim().length === 0
+  const sendDisabled =
+    !connected || !canPrompt || running || voiceBusy || sending || draft.trim().length === 0
 
   const micDisabledReason = !connected
     ? '连接中断'
@@ -134,13 +158,15 @@ export function Composer({
       ? '写权在另一台设备上'
       : running
         ? 'DSH 正在运行'
-        : environmentIssue !== null
-          ? environmentIssue
-          : sttDisabled
-            ? 'Bridge 未启用语音转写'
-            : voice.state === 'transcribing'
-              ? '正在转写'
-              : null
+        : sending
+          ? '正在发送语音'
+          : environmentIssue !== null
+            ? environmentIssue
+            : sttDisabled
+              ? 'Bridge 未启用语音转写'
+              : voice.state === 'transcribing'
+                ? '正在转写'
+                : null
   const micDisabled = micDisabledReason !== null
 
   const micLabel =
@@ -200,16 +226,81 @@ export function Composer({
     }, 400)
   }
 
-  function submit() {
+  function removePendingAudio() {
+    if (sending) return
+    setPendingAudio(null)
+    setUploadError(null)
+  }
+
+  async function submit() {
+    if (sending) return
     const parsed = promptSchema.safeParse(draft)
     if (!parsed.success) {
       setError(firstIssue(parsed.error))
       return
     }
-    const accepted = onSend(parsed.data)
-    if (!accepted) return
+
+    let audioId: string | undefined
+    let uploadFailed = false
+
+    if (pendingAudio !== null) {
+      setSending(true)
+      setUploadError(null)
+      let uploaded = pendingAudio.uploaded
+      if (uploaded === undefined) {
+        try {
+          if (mode === 'demo') {
+            uploaded = createDemoAudioMeta(pendingAudio.clip)
+          } else {
+            const controller = new AbortController()
+            uploadAbortRef.current = controller
+            uploaded = await uploadAudio({
+              sessionId: session.id,
+              blob: pendingAudio.clip.blob,
+              durationMs: pendingAudio.clip.durationMs,
+              token: authToken,
+              signal: controller.signal,
+            })
+            rememberAudioMeta(uploaded)
+          }
+          setPendingAudio((current) =>
+            current !== null && current.clip === pendingAudio.clip
+              ? { ...current, uploaded }
+              : current,
+          )
+        } catch (uploadFailure) {
+          uploadFailed = true
+          setUploadError(
+            uploadFailure instanceof AudioError
+              ? uploadFailure.message
+              : '音频上传失败，录音已保留，请重试',
+          )
+        } finally {
+          uploadAbortRef.current = null
+        }
+      }
+      if (!uploadFailed && uploaded !== undefined) audioId = uploaded.id
+    }
+
+    if (uploadFailed) {
+      setSending(false)
+      return
+    }
+
+    const accepted = onSend(parsed.data, audioId)
+    if (!accepted) {
+      setSending(false)
+      if (audioId !== undefined) {
+        setUploadError('语音已上传，但消息未发出。再次点发送重试。')
+      }
+      return
+    }
+
     setDraft('')
     draftRef.current = ''
+    setPendingAudio(null)
+    setUploadError(null)
+    setSending(false)
     setError(null)
     requestAnimationFrame(resizeTextarea)
   }
@@ -217,7 +308,7 @@ export function Composer({
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
-      if (!sendDisabled) submit()
+      if (!sendDisabled) void submit()
     }
   }
 
@@ -231,7 +322,9 @@ export function Composer({
           ? '说点什么，试试演示…'
           : '说点什么…'
 
-  const visibleError = error ?? voice.error
+  const visibleError = error ?? voice.error ?? uploadError
+  const showPendingAudio =
+    pendingAudio !== null && voice.state !== 'recording' && voice.state !== 'requesting'
   const voiceAnnouncement =
     voice.state === 'requesting'
       ? '正在请求麦克风'
@@ -353,6 +446,16 @@ export function Composer({
           </p>
         ) : null}
 
+        {showPendingAudio && pendingAudio !== null ? (
+          <PendingAudioChip
+            clip={pendingAudio.clip}
+            uploaded={pendingAudio.uploaded}
+            sending={sending}
+            demo={mode === 'demo'}
+            onRemove={removePendingAudio}
+          />
+        ) : null}
+
         <VoiceBar
           state={voice.state}
           elapsedMs={voice.elapsedMs}
@@ -426,9 +529,11 @@ export function Composer({
           </button>
           <button
             type="button"
-            onClick={submit}
+            onClick={() => {
+              void submit()
+            }}
             disabled={sendDisabled}
-            aria-label="发送消息"
+            aria-label={sending ? '正在发送' : '发送消息'}
             className={cn(
               'flex size-11 shrink-0 items-center justify-center rounded-full transition',
               sendDisabled
@@ -436,7 +541,11 @@ export function Composer({
                 : 'bg-signal text-on-signal shadow-primary active:scale-95',
             )}
           >
-            <ArrowUp className="size-5" strokeWidth={2.2} />
+            {sending ? (
+              <Spinner className="text-mute" label="正在发送" />
+            ) : (
+              <ArrowUp className="size-5" strokeWidth={2.2} />
+            )}
           </button>
         </div>
 

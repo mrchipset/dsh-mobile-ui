@@ -207,14 +207,14 @@ type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
 
 ### Interaction
 
-- Touch/pen press-and-hold records; release uploads.
+- Touch/pen press-and-hold records; release stops and requests transcription. Audio uploads only on send.
 - Mouse click toggles recording; Space/Enter on the focused mic also toggles.
-- `pointerdown` starts a hold for touch/pen; `pointerup`/`pointercancel` stops and uploads.
+- `pointerdown` starts a hold for touch/pen; `pointerup`/`pointercancel` stops and transcribes.
 - `contextmenu` is prevented; `touch-action: none`; pointer capture is used.
 - 60 s auto-stop; clips under 300 ms are treated as accidental.
 - Recording bar shows timer, input level, cancel, and stop.
-- While transcribing, show a spinner and disable a second recording.
-- On success, append the transcript to the draft and focus the textarea.
+- While transcribing, show a spinner, allow cancel, and disable a second recording.
+- On success, **replace** the draft with the transcript and focus the textarea (do not append).
 - Do not auto-send.
 - Keyboard fallback: click or Space/Enter toggles recording.
 
@@ -227,7 +227,24 @@ type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing' | 'error'
   3. `audio/mp4`
 - Release all MediaStream tracks and AudioContext resources on stop/unmount.
 - Stop on page hide or navigation.
-- Keep the Blob in memory only; drop it after transcription.
+- Keep one clip in memory as the pending attachment; drop it after send or remove.
+
+### Pending attachment and playback
+
+- New voice input replaces the pending clip and, once its transcript arrives, replaces the draft.
+- The composer shows one pending chip with local play/pause, duration, progress, and remove. Remove
+  clears only the audio; the text remains and can be sent without it.
+- Send uploads first with `POST /api/sessions/:sessionId/audio` (Bearer, explicit `Content-Type`,
+  required `X-Audio-Duration-Ms`) and only then calls `session.prompt` with `audioId`.
+- Upload failure retains the chip and draft and shows a retry; a failed prompt after upload keeps the
+  uploaded id so the next send can retry without losing the recording.
+- Sent user messages render `MessageBlock.audio` as a compact player. The first play fetches
+  `GET /api/audio/:id` with Bearer, creates an object URL, and caches/releases it per audio id; no
+  unauthenticated `<audio src>` is used. 401/404/network failures show an inline retry state.
+- `transcoded: false` shows a warning that the playback copy is the original format and may be
+  limited on iPhone, but does not block sending.
+- Demo mode generates a local WAV for preview and sent playback, clearly marked “模拟”; it never
+  uploads or fetches audio.
 
 ### Errors
 
@@ -239,10 +256,12 @@ Handle and localize:
 - too short / empty transcript
 - STT timeout or network error with retry
 - not the writer / session running (mic disabled)
+- upload failures (`audio_too_large`, `audio_busy`, `unsupported_audio`, 401/network) and playback
+  failures (401/404/network), with the pending clip or message player retained for retry.
 
 ### Demo mode
 
-Disable recording or use a local fake transcript; never call a real STT service from demo mode.
+Use a local fake transcript and local WAV clip; never call a real STT or upload/playback endpoint.
 
 ## 8. FunASR deployment
 
@@ -286,9 +305,13 @@ Preferred model: `paraformer` (Chinese + punctuation); `sensevoice` is a faster 
 
 - Playwright Chromium fake microphone.
 - Mock `/api/transcribe` to return Chinese text.
-- Press-and-hold starts/stops recording; draft is filled; no auto-send.
+- Press-and-hold starts/stops recording; the transcript replaces the draft; no auto-send.
 - Cancel, permission denied, empty transcript, and retry states.
-- 390×844 and 320×700; Light/Dark; no horizontal overflow.
+- Mock upload + playback; verify pending preview play/pause/remove, upload-before-send with
+  `audioId`, upload failure retaining the chip with no prompt, and sent-message fetch-on-first-play
+  with 401/404/network retry states.
+- Demo mode must issue no upload/playback requests.
+- 390×844 and 320×700; Light/Dark; 44px controls; no horizontal overflow.
 
 ### Real device
 

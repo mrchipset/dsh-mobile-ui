@@ -10,6 +10,7 @@ import type {
 import { fold } from '@dsh-mobile/protocol'
 import { toast } from 'sonner'
 import { create } from 'zustand'
+import { clearLocalAudio, getAudioMeta } from '../lib/audio'
 import {
   createDemoBlocks,
   createDemoMcp,
@@ -84,7 +85,7 @@ export interface BridgeStore {
   refreshSessions: () => void
   createSession: () => void
   attachSession: (sessionId: string) => void
-  sendPrompt: (sessionId: string, text: string) => boolean
+  sendPrompt: (sessionId: string, text: string, audioId?: string) => boolean
   cancelPrompt: (sessionId: string) => void
   takeLease: (sessionId: string) => void
   releaseLease: (sessionId: string) => void
@@ -108,6 +109,9 @@ const ERROR_COPY: Record<string, string> = {
   invalid_message: '请求格式不合法',
   session_cwd_mismatch: '会话目录与 Bridge 不匹配',
   agent_error: 'Agent 返回了错误',
+  audio_not_found: '语音附件不存在，请重新录制',
+  audio_session_mismatch: '语音附件不属于当前会话',
+  audio_already_attached: '这条语音已经附在另一条消息上',
 }
 
 let client: BridgeClient | null = null
@@ -327,13 +331,25 @@ function continueDemoTurn(sessionId: string, outcome: 'allowed' | 'rejected'): v
   }, 1360)
 }
 
-function startDemoTurn(sessionId: string, text: string): void {
+function startDemoTurn(sessionId: string, text: string, audioId?: string): void {
   const now = Date.now()
+  const audioMeta = audioId === undefined ? undefined : getAudioMeta(audioId)
+  const audio =
+    audioMeta === undefined
+      ? undefined
+      : {
+          id: audioMeta.id,
+          mimeType: audioMeta.mimeType,
+          playbackMimeType: audioMeta.playbackMimeType,
+          durationMs: audioMeta.durationMs,
+          sizeBytes: audioMeta.sizeBytes,
+        }
   appendDemoBlock(sessionId, {
     kind: 'message',
     id: randomId('demo-user-'),
     role: 'user',
     text,
+    ...(audio === undefined ? {} : { audio }),
   })
   useBridgeStore.setState((state) => {
     const summary = state.sessions[sessionId]
@@ -577,6 +593,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
 
   enterDemo: () => {
     clearDemoTimers()
+    clearLocalAudio()
     ensureClient().disconnect()
     // Entering demo mode must not hijack the current route. The catalog,
     // settings, and session deep links all remain reachable after boot.
@@ -617,6 +634,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   exitDemo: () => {
     if (get().mode !== 'demo') return
     clearDemoTimers()
+    clearLocalAudio()
     storage()?.removeItem(DEMO_KEY)
     const connection = ensureClient()
     connection.disconnect()
@@ -704,7 +722,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
     if (client !== null) client.send({ type: 'session.attach', sessionId })
   },
 
-  sendPrompt: (sessionId, text) => {
+  sendPrompt: (sessionId, text, audioId) => {
     const parsed = promptSchema.safeParse(text)
     if (!parsed.success) {
       notifyError(firstIssue(parsed.error))
@@ -721,7 +739,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
       return false
     }
     if (state.mode === 'demo') {
-      startDemoTurn(sessionId, parsed.data)
+      startDemoTurn(sessionId, parsed.data, audioId)
       return true
     }
     if (state.status !== 'ready') {
@@ -750,6 +768,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
       sessionId,
       clientMsgId,
       text: parsed.data,
+      ...(audioId === undefined ? {} : { audioId }),
     })
     if (!sent) {
       set((current) => {
