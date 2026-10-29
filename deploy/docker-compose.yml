@@ -1,4 +1,4 @@
-# Full deployment stack: STT + Bridge/DSH + Caddy web.
+﻿# Full deployment stack: STT + Bridge/DSH + Caddy web.
 #
 #   cd deploy
 #   cp .env.example .env   # fill BRIDGE_SECRET and GATEAWAY_API_KEY
@@ -20,8 +20,8 @@ services:
         TORCH_VERSION: ${TORCH_VERSION:-2.6.0}
         FUNASR_REPO: ${FUNASR_REPO:-https://github.com/modelscope/FunASR.git}
         FUNASR_COMMIT: ${FUNASR_COMMIT:-d91d961e37a005837b1523bcc6b09f087877be54}
-        APT_MIRROR: ${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
-        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
+        APT_MIRROR: ${APT_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian-security}
     restart: unless-stopped
     volumes:
       # Reuse the host-cached paraformer weights.
@@ -48,8 +48,8 @@ services:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         PNPM_VERSION: ${PNPM_VERSION:-10.25.0}
         DSH_VERSION: ${DSH_VERSION:-0.2.1-rc.2}
-        APT_MIRROR: ${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
-        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
+        APT_MIRROR: ${APT_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian-security}
     image: dsh-mobile-bridge:local
     init: true
     restart: unless-stopped

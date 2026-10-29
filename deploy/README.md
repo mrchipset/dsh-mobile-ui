@@ -1,10 +1,10 @@
-# Deployment stack (STT + Bridge/DSH + Caddy)
+﻿# Deployment stack (STT + Bridge/DSH + Caddy)
 
 Runs the full project in Docker:
 
-- `stt` — FunASR OpenAI-compatible API (`funasr-openai-api:cpu-2026-10`), internal only.
-- `bridge` — DSH Mobile Bridge **and** the `dsh` CLI in one container (ACP is stdio).
-- `web` — Caddy serving the mobile static build over HTTPS on `8443`.
+- `stt` 鈥?FunASR OpenAI-compatible API (`funasr-openai-api:cpu-2026-10`), internal only.
+- `bridge` 鈥?DSH Mobile Bridge **and** the `dsh` CLI in one container (ACP is stdio).
+- `web` 鈥?Caddy serving the mobile static build over HTTPS on `8443`.
 
 Only `web` publishes a host port. Phones talk to Caddy; Caddy proxies `/api/*`
 and `/ws*` to the Bridge. The Bridge talks to STT and to the LLM gateway.
@@ -166,7 +166,9 @@ Tsinghua PyPI, official CPU torch index, GitHub FunASR. Override all of them in
   inspect` still contacts the registry and may time out even when a local image
   is usable.
 - **Debian apt fetch failures**: `APT_MIRROR`/`APT_SECURITY_MIRROR` are rewritten
-  in both build stages with `Acquire::Retries=5`. Try Aliyun or USTC.
+  in both build stages with `Acquire::Retries=5`. The defaults use `http://`
+  because `node:*-slim` has no CA certificates before the apt layer; apt still
+  verifies signed Release files. Try Aliyun or USTC if needed.
 - **npm install stalls**: set `NPM_REGISTRY=https://registry.npmmirror.com` (the
   default) or another mirror; pnpm, global pnpm, global DSH, and the DSH profile
   all use it.

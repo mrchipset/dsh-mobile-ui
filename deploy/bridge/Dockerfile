@@ -1,4 +1,4 @@
-# Bridge + DSH runtime. Bridge and DSH share this container because ACP is stdio.
+﻿# Bridge + DSH runtime. Bridge and DSH share this container because ACP is stdio.
 # Build context is the repository root (see deploy/docker-compose.yml).
 
 # Local image (node 22.23.4) avoids Docker Hub pulls on this host. Override with
@@ -9,8 +9,13 @@ FROM ${NODE_IMAGE} AS build
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG PNPM_VERSION=10.25.0
-ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
-ARG APT_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
+# HTTP (not HTTPS) until ca-certificates exists in the image; apt verifies GPG signatures.
+ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+ARG APT_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
+
+# node-gyp must use the headers shipped in the Node image; nodejs.org is not
+# reachable here (better-sqlite3 otherwise fails to download prebuilt headers).
+ENV npm_config_nodedir=/usr/local
 
 # better-sqlite3 is a native dependency; keep a compiler in the builder.
 RUN set -eu; \
@@ -63,10 +68,12 @@ FROM ${NODE_IMAGE} AS runtime
 ARG NPM_REGISTRY=https://registry.npmmirror.com
 ARG DSH_VERSION=0.2.1-rc.2
 ARG PNPM_VERSION=10.25.0
-ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian
-ARG APT_SECURITY_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/debian-security
+# HTTP (not HTTPS) until ca-certificates exists in the image; apt verifies GPG signatures.
+ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+ARG APT_SECURITY_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian-security
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    npm_config_nodedir=/usr/local
 
 # ffmpeg transcode, git/ripgrep for DSH tools. python3/make/g++ cover npm native
 # addons during the global DSH install and are purged afterwards.
